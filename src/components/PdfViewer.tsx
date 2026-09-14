@@ -71,6 +71,8 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   const [numPages, setNumPages]           = useState<number>(1);
   const [currentPage, setCurrentPage]     = useState<number>(1);
   const [scale, setScale]                 = useState<number>(1.2);
+  const userZoomedRef                     = useRef<boolean>(false);
+  const [canvasDimensions, setCanvasDimensions] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const [hoveredFieldId, setHoveredFieldId]   = useState<string | null>(null);
   const [isDragging, setIsDragging]       = useState<boolean>(false);
@@ -198,6 +200,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     if (!scrollContainerRef.current || !pdfDoc) return;
     const observer = new ResizeObserver(() => {
       if (window.innerWidth >= 640) return;
+      if (userZoomedRef.current) return;
       pdfDoc.getPage(currentPage).then((page: any) => {
         const unscaledViewport = page.getViewport({ scale: 1.0 });
         const fitScale = getContainerFitScale(unscaledViewport.width, unscaledViewport.height);
@@ -220,6 +223,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         if (!ctx) return;
         canvas.height = viewport.height;
         canvas.width  = viewport.width;
+        setCanvasDimensions({ width: viewport.width, height: viewport.height });
         renderTask = page.render({ canvasContext: ctx, viewport });
         await renderTask.promise;
       } catch (err: any) {
@@ -229,6 +233,55 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     renderPage();
     return () => { if (renderTask) renderTask.cancel(); };
   }, [pdfDoc, currentPage, scale]);
+
+  // Mobile pinch-to-zoom touch gesture handling
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+
+    let initialDist: number | null = null;
+    let initialScale = 1.0;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        initialDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+        initialScale = scale;
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && initialDist && initialDist > 10) {
+        if (e.cancelable) e.preventDefault();
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const currentDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+        const factor = currentDist / initialDist;
+        const targetScale = Math.min(3.0, Math.max(0.35, Math.round(initialScale * factor * 100) / 100));
+        userZoomedRef.current = true;
+        setScale(targetScale);
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) {
+        initialDist = null;
+      }
+    };
+
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd, { passive: true });
+    el.addEventListener('touchcancel', onTouchEnd, { passive: true });
+
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
+      el.removeEventListener('touchcancel', onTouchEnd);
+    };
+  }, [scale]);
 
   const getVisiblePlacement = () => {
     let targetX = 35;
@@ -449,15 +502,12 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (isPanning && scrollContainerRef.current) {
-      const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
-      const dx = isMobile ? 0 : (e.clientX - panStartRef.current.x);
+      const dx = e.clientX - panStartRef.current.x;
       const dy = e.clientY - panStartRef.current.y;
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
         hasPannedRef.current = true;
       }
-      if (!isMobile) {
-        scrollContainerRef.current.scrollLeft = panStartRef.current.scrollLeft - dx;
-      }
+      scrollContainerRef.current.scrollLeft = panStartRef.current.scrollLeft - dx;
       scrollContainerRef.current.scrollTop  = panStartRef.current.scrollTop  - dy;
       return;
     }
@@ -648,19 +698,24 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
           {/* Zoom */}
           <div
-            className="hidden sm:flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs"
+            className="flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2.5 py-1 sm:py-1.5 rounded-full text-xs"
             style={{ background: 'rgba(255,255,255,0.60)', border: '1px solid var(--border)' }}
           >
             <button
-              onClick={() => setScale((s) => Math.max(0.35, s - 0.15))}
+              onClick={() => {
+                userZoomedRef.current = true;
+                setScale((s) => Math.max(0.35, Math.round((s - 0.15) * 100) / 100));
+              }}
               style={{ color: 'var(--fg-muted)' }}
               aria-label="Zoom out"
-              className="hover:text-[var(--moss)] cursor-pointer"
+              title="Zoom out"
+              className="hover:text-[var(--moss)] cursor-pointer p-0.5"
             >
               <ZoomOut style={{ height: 14, width: 14 }} />
             </button>
             <button
               onClick={() => {
+                userZoomedRef.current = false;
                 if (pdfDoc) {
                   pdfDoc.getPage(currentPage).then((page: any) => {
                     const unscaled = page.getViewport({ scale: 1.0 });
@@ -671,16 +726,20 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 }
               }}
               title="Click to fit screen"
-              className="font-mono font-bold text-[11px] w-12 text-center hover:text-[var(--moss)] transition-colors cursor-pointer"
+              className="font-mono font-bold text-[10px] sm:text-[11px] w-9 sm:w-12 text-center hover:text-[var(--moss)] transition-colors cursor-pointer"
               style={{ color: 'var(--fg)' }}
             >
               {Math.round(scale * 100)}%
             </button>
             <button
-              onClick={() => setScale((s) => Math.min(2.5, s + 0.15))}
+              onClick={() => {
+                userZoomedRef.current = true;
+                setScale((s) => Math.min(3.0, Math.round((s + 0.15) * 100) / 100));
+              }}
               style={{ color: 'var(--fg-muted)' }}
               aria-label="Zoom in"
-              className="hover:text-[var(--moss)] cursor-pointer"
+              title="Zoom in"
+              className="hover:text-[var(--moss)] cursor-pointer p-0.5"
             >
               <ZoomIn style={{ height: 14, width: 14 }} />
             </button>
@@ -740,15 +799,15 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         {/* PDF Canvas + Field Overlay */}
         <div
           ref={scrollContainerRef}
-          className={`flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-8 select-none ${
+          className={`flex-1 overflow-auto p-2 sm:p-8 select-none ${
             isPanning ? 'cursor-grabbing' : 'cursor-grab'
           }`}
           style={{
             background: 'var(--bg)',
             scrollbarWidth: 'thin',
             scrollbarColor: 'var(--moss) rgba(0,0,0,0.06)',
-            touchAction: 'pan-y',
-            overscrollBehavior: 'none',
+            touchAction: 'pan-x pan-y',
+            overscrollBehavior: 'contain',
           }}
           onMouseDown={handleScrollAreaMouseDown}
           onMouseMove={handleMouseMove}
@@ -758,13 +817,24 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             setSelectedFieldId(null);
           }}
         >
-          <div className="w-full min-h-full flex items-center justify-center m-auto pb-14 sm:pb-28 overflow-x-hidden">
+          <div className="min-w-full w-max min-h-full flex items-center justify-center m-auto pb-20 sm:pb-28">
             <div
               ref={containerRef}
-              className="relative block shrink-0 m-auto max-w-full"
-              style={{ boxShadow: '0 8px 48px rgba(44,44,36,0.12)' }}
+              className="relative block shrink-0 m-auto"
+              style={{
+                boxShadow: '0 8px 48px rgba(44,44,36,0.12)',
+                width: canvasDimensions.width ? `${canvasDimensions.width}px` : undefined,
+                height: canvasDimensions.height ? `${canvasDimensions.height}px` : undefined,
+              }}
             >
-              <canvas ref={canvasRef} className="block pointer-events-none max-w-full h-auto" />
+              <canvas
+                ref={canvasRef}
+                className="block pointer-events-none"
+                style={{
+                  width: canvasDimensions.width ? `${canvasDimensions.width}px` : undefined,
+                  height: canvasDimensions.height ? `${canvasDimensions.height}px` : undefined,
+                }}
+              />
 
             {/* Field Overlay */}
             {currentPageFields.map((field) => {
@@ -1137,6 +1207,55 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         <Type style={{ height: 13, width: 13 }} />,
         () => addField('text')
       )}
+    </div>
+
+    {/* ── Mobile Floating Zoom Controls ── */}
+    <div
+      className="fixed bottom-[4.75rem] right-3 z-40 sm:hidden flex items-center gap-1 px-2 py-1.5 rounded-full glass shadow-float border border-border"
+      style={{
+        background: 'rgba(254, 254, 250, 0.92)',
+        backdropFilter: 'blur(16px)',
+        boxShadow: '0 8px 24px -4px rgba(44,44,36,0.18)',
+      }}
+      aria-label="Mobile zoom controls"
+    >
+      <button
+        onClick={() => {
+          userZoomedRef.current = true;
+          setScale((s) => Math.max(0.35, Math.round((s - 0.2) * 100) / 100));
+        }}
+        aria-label="Zoom out"
+        className="p-1.5 rounded-full hover:bg-[var(--moss-dim)] text-[var(--fg-muted)] active:scale-95 transition-transform cursor-pointer"
+      >
+        <ZoomOut style={{ height: 16, width: 16 }} />
+      </button>
+      <button
+        onClick={() => {
+          userZoomedRef.current = false;
+          if (pdfDoc) {
+            pdfDoc.getPage(currentPage).then((page: any) => {
+              const unscaled = page.getViewport({ scale: 1.0 });
+              setScale(getContainerFitScale(unscaled.width, unscaled.height));
+            });
+          } else {
+            setScale(1.0);
+          }
+        }}
+        className="font-mono font-bold text-[11px] px-1.5 py-0.5 rounded-md hover:bg-[var(--moss-dim)] text-[var(--fg)] active:scale-95 transition-all cursor-pointer"
+        title="Reset zoom to fit screen"
+      >
+        {Math.round(scale * 100)}%
+      </button>
+      <button
+        onClick={() => {
+          userZoomedRef.current = true;
+          setScale((s) => Math.min(3.0, Math.round((s + 0.2) * 100) / 100));
+        }}
+        aria-label="Zoom in"
+        className="p-1.5 rounded-full hover:bg-[var(--moss-dim)] text-[var(--fg-muted)] active:scale-95 transition-transform cursor-pointer"
+      >
+        <ZoomIn style={{ height: 16, width: 16 }} />
+      </button>
     </div>
   </>
   );
