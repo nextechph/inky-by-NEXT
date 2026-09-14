@@ -219,9 +219,10 @@ export async function combineSignatureAndName(
       const cropSrcX = hasPixels ? minX : 0;
       const cropSrcY = hasPixels ? minY : 0;
 
-      const scale = 2;
-      const sigW = exactCropW * scale;
-      const sigH = exactCropH * scale;
+      // Ensure crisp high-DPI resolution without over-scaling large signatures
+      const scale = exactCropW < 500 ? Math.min(2.5, 700 / exactCropW) : 1;
+      const sigW = Math.round(exactCropW * scale);
+      const sigH = Math.round(exactCropH * scale);
 
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
@@ -230,37 +231,73 @@ export async function combineSignatureAndName(
         return;
       }
 
-      const fontSize = 22 * scale;
-      const font = `700 ${fontSize}px ${fontFamily}`;
-      ctx.font = font;
-
       const cleanName = name.trim().toUpperCase();
-      const metrics = ctx.measureText(cleanName);
-      const textWidth = metrics.width;
-      // Exact cap-height / ascent of the text
-      const actualAscent = metrics.actualBoundingBoxAscent || fontSize * 0.72;
-      const actualDescent = metrics.actualBoundingBoxDescent || fontSize * 0.22;
+      const nameLen = Math.max(cleanName.length, 3);
 
-      const paddingX = 20 * scale;
+      // 1. Proportional font size from signature height (~22% to 26% of signature height)
+      const targetFromHeight = sigH * 0.24;
+
+      // 2. Proportional font size from signature width (so text spans roughly 50% to 65% of signature width)
+      const targetFromWidth = (sigW * 0.58) / (nameLen * 0.60);
+
+      // Balanced font size: start with targetFromHeight, scale up if signature is wide
+      let fontSize = Math.max(targetFromHeight, targetFromWidth * 0.8);
+
+      // Width cap: text shouldn't be excessively wider than signature
+      const maxAllowedWidth = Math.max(sigW * 1.08, sigW + 40);
+      const estWidth = nameLen * 0.60 * fontSize;
+      if (estWidth > maxAllowedWidth) {
+        fontSize = maxAllowedWidth / (nameLen * 0.60);
+      }
+
+      // Height cap: font size shouldn't exceed 36% of signature height, unless signature is very flat
+      const maxAllowedHeight = Math.max(sigH * 0.36, sigW * 0.09);
+      if (fontSize > maxAllowedHeight) {
+        fontSize = maxAllowedHeight;
+      }
+
+      // Minimum floor to ensure crisp legibility
+      fontSize = Math.max(Math.round(fontSize), 20);
+
+      // Measure precise text width with canvas context
+      ctx.font = `700 ${fontSize}px ${fontFamily}`;
+      let textMetrics = ctx.measureText(cleanName);
+      let textWidth = textMetrics.width;
+
+      // Refinement: if measured text exceeds maxAllowedWidth, scale down precisely
+      if (textWidth > maxAllowedWidth && textWidth > 0) {
+        fontSize = Math.max(Math.round(fontSize * (maxAllowedWidth / textWidth)), 18);
+        ctx.font = `700 ${fontSize}px ${fontFamily}`;
+        textMetrics = ctx.measureText(cleanName);
+        textWidth = textMetrics.width;
+      }
+
+      // Exact cap-height / ascent and descent
+      const actualAscent = textMetrics.actualBoundingBoxAscent || fontSize * 0.72;
+      const actualDescent = textMetrics.actualBoundingBoxDescent || fontSize * 0.22;
+
+      // Responsive gap between signature bottom and printed name top
+      // nameSpacing is visual CSS slider value (default 8, range -15 to +35)
+      const baseGap = fontSize * 0.28;
+      const spacingOffset = (nameSpacing - 8) * (fontSize / 24);
+      const gap = Math.round(baseGap + spacingOffset);
+
+      const paddingX = Math.round(fontSize * 0.5);
       const contentWidth = Math.max(sigW, textWidth);
       const totalWidth = contentWidth + paddingX * 2;
 
-      // nameSpacing is in visual CSS pixels (e.g. -15px to +35px)
-      const gap = Math.round(nameSpacing * scale);
-
-      const sigTop = 4 * scale;
+      const sigTop = Math.round(fontSize * 0.15);
       const sigBottom = sigTop + sigH;
-      // Place the text baseline so that the top edge of capital letters is at (sigBottom + gap)
       const textBaselineY = sigBottom + gap + actualAscent;
       const textBottom = textBaselineY + actualDescent;
 
-      const totalHeight = Math.max(sigBottom + 8 * scale, textBottom + 8 * scale);
+      const totalHeight = Math.max(sigBottom + fontSize * 0.2, textBottom + fontSize * 0.3);
 
       canvas.width = Math.round(totalWidth);
       canvas.height = Math.round(totalHeight);
 
-      // Re-apply styles after resizing canvas
-      ctx.font = font;
+      // Re-apply context styles after resizing canvas
+      ctx.font = `700 ${fontSize}px ${fontFamily}`;
       ctx.fillStyle = textColor;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'alphabetic';

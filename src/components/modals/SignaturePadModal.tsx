@@ -1219,7 +1219,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
 
                   {/* Minimal Live Output Preview */}
                   {printedName.trim() && (
-                    <div className="rounded-xl border border-dashed border-[var(--border-light)] bg-white/70 p-2 flex items-center justify-center relative min-h-[54px] max-h-[76px] overflow-hidden select-none">
+                    <div className="rounded-xl border border-dashed border-[var(--border-light)] bg-white/70 p-2 flex items-center justify-center relative min-h-[60px] max-h-[90px] overflow-hidden select-none">
                       <span className="absolute top-1 right-2 text-[8px] font-bold uppercase tracking-wider text-[var(--fg-muted)] opacity-60">
                         Preview
                       </span>
@@ -1227,7 +1227,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                         <img
                           src={combinedPreviewUrl}
                           alt="Signature preview"
-                          className="max-h-12 max-w-[260px] object-contain select-none transition-all duration-75"
+                          className="max-h-16 max-w-[280px] object-contain select-none transition-all duration-75"
                         />
                       ) : (
                         <div className="flex flex-col items-center justify-center text-center">
