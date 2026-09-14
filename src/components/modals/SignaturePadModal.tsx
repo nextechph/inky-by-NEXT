@@ -51,6 +51,17 @@ export const STROKE_WIDTH_OPTIONS = [
 
 export type StrokeWidthType = typeof STROKE_WIDTH_OPTIONS[number]['id'];
 
+export const PRINTED_NAME_FONTS: DropdownOption<string>[] = [
+  { value: 'Inter',           label: 'Inter',           sublabel: 'Modern Sans',       fontFamily: 'Inter, sans-serif' },
+  { value: 'Geist',           label: 'Geist',           sublabel: 'Clean Geometric',   fontFamily: 'Geist, sans-serif' },
+  { value: 'Arial',           label: 'Arial',           sublabel: 'Universal Sans',    fontFamily: 'Arial, sans-serif' },
+  { value: 'Times New Roman', label: 'Times New Roman', sublabel: 'Classic Editorial', fontFamily: 'Times New Roman, serif' },
+  { value: 'EB Garamond',     label: 'EB Garamond',     sublabel: 'Book Serif',        fontFamily: 'EB Garamond, serif' },
+  { value: 'Courier New',     label: 'Courier New',     sublabel: 'Monospace Legal',   fontFamily: 'Courier New, monospace' },
+  { value: 'Dancing Script',  label: 'Dancing Script',  sublabel: 'Classic Cursive',   fontFamily: 'Dancing Script, cursive' },
+  { value: 'Caveat',          label: 'Caveat',          sublabel: 'Casual Hand',       fontFamily: 'Caveat, cursive' },
+];
+
 export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
   isOpen,
   onClose,
@@ -65,6 +76,8 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
   const [sigLabel, setSigLabel]                     = useState('');
   const [includePrintedName, setIncludePrintedName] = useState(false);
   const [printedName, setPrintedName]               = useState('');
+  const [nameFont, setNameFont]                     = useState<string>('Inter');
+  const [nameFontSizeScale, setNameFontSizeScale]   = useState<number>(1.0);
   const [nameSpacing, setNameSpacing]               = useState<number>(8);
   const [drawnPreview, setDrawnPreview]             = useState<string | null>(null);
   const [sigBottomY, setSigBottomY]                 = useState<number | null>(null);
@@ -574,8 +587,9 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
             baseSig,
             printedName.trim(),
             penColor,
-            undefined,
-            nameSpacing
+            nameFont,
+            nameSpacing,
+            nameFontSizeScale
           );
           if (isMounted) {
             setCombinedPreviewUrl(combined);
@@ -591,7 +605,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [isOpen, includePrintedName, printedName, nameSpacing, activeTab, penColor, typedText, selectedFont, drawnPreview]);
+  }, [isOpen, includePrintedName, printedName, nameSpacing, nameFont, nameFontSizeScale, activeTab, penColor, typedText, selectedFont, drawnPreview]);
 
   if (!isOpen) return null;
 
@@ -615,7 +629,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
     }
     if (dataUrl) {
       if (includePrintedName && effectiveName) {
-        dataUrl = await combineSignatureAndName(dataUrl, effectiveName, penColor, undefined, nameSpacing);
+        dataUrl = await combineSignatureAndName(dataUrl, effectiveName, penColor, nameFont, nameSpacing, nameFontSizeScale);
       }
       saveSignature({ type: activeTab as any, dataUrl, label, isDefault });
       onSelectSignature(dataUrl, label);
@@ -633,7 +647,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
         let cleanResult = await processUploadedSignature(rawResult);
         const effectiveName = printedName.trim().toUpperCase();
         if (includePrintedName && effectiveName) {
-          cleanResult = await combineSignatureAndName(cleanResult, effectiveName, penColor, undefined, nameSpacing);
+          cleanResult = await combineSignatureAndName(cleanResult, effectiveName, penColor, nameFont, nameSpacing, nameFontSizeScale);
         }
         const label = sigLabel.trim() || (includePrintedName && effectiveName ? effectiveName : 'Uploaded Signature');
         saveSignature({ type: 'upload', dataUrl: cleanResult, label, isDefault });
@@ -1169,9 +1183,66 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                     value={printedName}
                     onChange={(e) => setPrintedName(e.target.value.toUpperCase())}
                     className="w-full h-8.5 px-3 rounded-xl bg-white/90 border border-[var(--border-light)] focus:border-[var(--moss)] text-xs font-bold uppercase tracking-wider text-[var(--fg)] outline-none transition-colors placeholder:text-[var(--fg-muted)]/50 placeholder:font-normal placeholder:normal-case shadow-2xs"
+                    style={{ fontFamily: nameFont }}
                     placeholder="Enter printed full name (e.g. MARK LURIAN)..."
                     autoFocus
                   />
+
+                  {/* Slim Minimalist Font & Size Controls Row */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    {/* Font Selector */}
+                    <div className="flex items-center justify-between gap-2 bg-white/50 px-2.5 py-1.5 rounded-xl border border-[var(--border-light)]/60">
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <Type style={{ height: 11, width: 11, color: 'var(--fg-muted)' }} />
+                        <span className="text-[10px] font-bold text-[var(--fg-muted)]">Font</span>
+                      </div>
+                      <div className="flex-1 max-w-[170px]">
+                        <Dropdown
+                          value={nameFont}
+                          onChange={(val) => setNameFont(String(val))}
+                          options={PRINTED_NAME_FONTS}
+                          direction="down"
+                          align="right"
+                          buttonClassName="!h-7 !py-0 px-2 text-[11px] font-bold bg-white/90 rounded-lg border border-[var(--border-light)] text-[var(--fg)] w-full justify-between"
+                          menuClassName="min-w-[190px] max-h-56 shadow-lg z-50"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Font Size Selector */}
+                    <div className="flex items-center justify-between gap-2 bg-white/50 px-2.5 py-1.5 rounded-xl border border-[var(--border-light)]/60">
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-[10px] font-bold text-[var(--fg-muted)]">Size</span>
+                        <span className="text-[10px] font-mono font-bold text-[var(--moss)] bg-[var(--moss-dim)] px-1.5 py-0.5 rounded-md">
+                          {Math.round(nameFontSizeScale * 100)}%
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {[
+                          { label: 'Small',  scale: 0.8 },
+                          { label: 'Normal', scale: 1.0 },
+                          { label: 'Large',  scale: 1.25 },
+                          { label: 'XL',     scale: 1.5 },
+                        ].map((preset) => {
+                          const isActive = Math.abs(nameFontSizeScale - preset.scale) < 0.05;
+                          return (
+                            <button
+                              key={preset.label}
+                              type="button"
+                              onClick={() => setNameFontSizeScale(preset.scale)}
+                              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                                isActive
+                                  ? 'bg-[var(--moss)] text-white shadow-2xs'
+                                  : 'bg-black/5 hover:bg-black/10 text-[var(--fg-muted)]'
+                              }`}
+                            >
+                              {preset.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
 
                   {/* Slim Minimalist Spacing Row */}
                   <div className="flex items-center justify-between gap-3 text-xs bg-white/50 px-2.5 py-1.5 rounded-xl border border-[var(--border-light)]/60">
@@ -1240,11 +1311,12 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                               : 'Sample Signature'}
                           </span>
                           <span
-                            className="font-extrabold uppercase tracking-wider text-[10px] select-none block leading-tight"
+                            className="font-extrabold uppercase tracking-wider select-none block leading-tight"
                             style={{
                               color: penColor,
                               marginTop: `${Math.max(2, nameSpacing + 4)}px`,
-                              fontFamily: 'Inter, system-ui, sans-serif',
+                              fontFamily: nameFont,
+                              fontSize: `${Math.round(11 * nameFontSizeScale)}px`,
                             }}
                           >
                             {printedName.trim()}

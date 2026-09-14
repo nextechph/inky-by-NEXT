@@ -174,7 +174,8 @@ export async function combineSignatureAndName(
   name: string,
   textColor: string,
   fontFamily = 'Inter, system-ui, -apple-system, sans-serif',
-  nameSpacing = 8
+  nameSpacing = 8,
+  fontSizeScale = 1.0
 ): Promise<string> {
   return new Promise((resolve) => {
     const img = new Image();
@@ -233,41 +234,43 @@ export async function combineSignatureAndName(
 
       const cleanName = name.trim().toUpperCase();
       const nameLen = Math.max(cleanName.length, 3);
+      const safeScale = Math.max(0.6, Math.min(2.5, fontSizeScale || 1.0));
+      const resolvedFontFamily = fontFamily.includes(',') ? fontFamily : `"${fontFamily}", Inter, sans-serif`;
 
-      // 1. Proportional font size from signature height (~22% to 26% of signature height)
-      const targetFromHeight = sigH * 0.24;
+      // 1. Proportional font size from signature height (~22% to 26% of signature height * safeScale)
+      const targetFromHeight = sigH * 0.24 * safeScale;
 
-      // 2. Proportional font size from signature width (so text spans roughly 50% to 65% of signature width)
-      const targetFromWidth = (sigW * 0.58) / (nameLen * 0.60);
+      // 2. Proportional font size from signature width (so text spans roughly 50% to 65% of signature width * safeScale)
+      const targetFromWidth = (sigW * 0.58 * safeScale) / (nameLen * 0.60);
 
       // Balanced font size: start with targetFromHeight, scale up if signature is wide
       let fontSize = Math.max(targetFromHeight, targetFromWidth * 0.8);
 
-      // Width cap: text shouldn't be excessively wider than signature
-      const maxAllowedWidth = Math.max(sigW * 1.08, sigW + 40);
+      // Width cap: text shouldn't excessively spill beyond signature
+      const maxAllowedWidth = Math.max(sigW * 1.15 * Math.max(1, safeScale), sigW + 60);
       const estWidth = nameLen * 0.60 * fontSize;
       if (estWidth > maxAllowedWidth) {
         fontSize = maxAllowedWidth / (nameLen * 0.60);
       }
 
-      // Height cap: font size shouldn't exceed 36% of signature height, unless signature is very flat
-      const maxAllowedHeight = Math.max(sigH * 0.36, sigW * 0.09);
+      // Height cap: font size shouldn't exceed reasonable proportion of signature height
+      const maxAllowedHeight = Math.max(sigH * 0.45 * safeScale, sigW * 0.12 * safeScale);
       if (fontSize > maxAllowedHeight) {
         fontSize = maxAllowedHeight;
       }
 
       // Minimum floor to ensure crisp legibility
-      fontSize = Math.max(Math.round(fontSize), 20);
+      fontSize = Math.max(Math.round(fontSize), Math.round(18 * safeScale));
 
       // Measure precise text width with canvas context
-      ctx.font = `700 ${fontSize}px ${fontFamily}`;
+      ctx.font = `700 ${fontSize}px ${resolvedFontFamily}`;
       let textMetrics = ctx.measureText(cleanName);
       let textWidth = textMetrics.width;
 
       // Refinement: if measured text exceeds maxAllowedWidth, scale down precisely
       if (textWidth > maxAllowedWidth && textWidth > 0) {
         fontSize = Math.max(Math.round(fontSize * (maxAllowedWidth / textWidth)), 18);
-        ctx.font = `700 ${fontSize}px ${fontFamily}`;
+        ctx.font = `700 ${fontSize}px ${resolvedFontFamily}`;
         textMetrics = ctx.measureText(cleanName);
         textWidth = textMetrics.width;
       }
@@ -297,7 +300,7 @@ export async function combineSignatureAndName(
       canvas.height = Math.round(totalHeight);
 
       // Re-apply context styles after resizing canvas
-      ctx.font = `700 ${fontSize}px ${fontFamily}`;
+      ctx.font = `700 ${fontSize}px ${resolvedFontFamily}`;
       ctx.fillStyle = textColor;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'alphabetic';
