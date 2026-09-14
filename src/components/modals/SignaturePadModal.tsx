@@ -476,9 +476,9 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
       }}
     >
       <div
-        className="card-organic animate-slideUp w-full sm:max-w-lg rounded-[1.75rem] sm:rounded-[2.5rem] overflow-hidden flex flex-col shadow-2xl"
+        className="card-organic animate-slideUp w-full sm:max-w-xl rounded-[1.75rem] sm:rounded-[2.5rem] overflow-hidden flex flex-col shadow-2xl"
         style={{
-          maxHeight: 'min(94dvh, 760px)',
+          maxHeight: 'min(96dvh, 880px)',
           minHeight: 0,
         }}
         onClick={(e) => e.stopPropagation()}
@@ -552,7 +552,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
           >
             {/* Canvas well */}
             <div
-              className="relative rounded-[1.25rem] sm:rounded-[1.5rem] overflow-hidden select-none h-32 xs:h-36 sm:h-44"
+              className="relative rounded-[1.25rem] sm:rounded-[1.5rem] overflow-hidden select-none h-44 xs:h-52 sm:h-64"
               style={{
                 background: 'rgba(255,255,255,0.65)',
                 border: '2px dashed rgba(93,112,82,0.30)',
