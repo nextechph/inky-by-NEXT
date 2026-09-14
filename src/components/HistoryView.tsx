@@ -31,7 +31,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
   onDeleteDocument,
   onGoToQueue,
 }) => {
-  const [activeFilter, setActiveFilter] = useState<'all' | 'by_you' | 'by_others'>('all');
+  const [activeFilter, setActiveFilter] = useState<'by_you' | 'by_others'>('by_you');
   const [searchQuery, setSearchQuery] = useState('');
 
   const signedDocs = useMemo(
@@ -133,10 +133,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
       if (activeFilter === 'by_you') {
         return meta?.hasYouSigned;
       }
-      if (activeFilter === 'by_others') {
-        return meta?.hasOthersSigned;
-      }
-      return true;
+      return meta?.hasOthersSigned;
     });
   }, [signedDocs, searchQuery, activeFilter, docSigningMeta]);
 
@@ -235,7 +232,6 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
           style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
         >
           {[
-            { id: 'all', label: `All (${signedDocs.length})`, icon: History },
             { id: 'by_you', label: `Signed by You (${byYouCount})`, icon: UserCheck },
             { id: 'by_others', label: `Signed by Others (${byOthersCount})`, icon: Users },
           ].map((tab) => {
@@ -276,18 +272,14 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                   ? 'No matching documents'
                   : activeFilter === 'by_you'
                   ? 'No documents signed by you yet'
-                  : activeFilter === 'by_others'
-                  ? 'No documents signed by others yet'
-                  : 'No signed documents yet'}
+                  : 'No documents signed by others yet'}
               </h3>
               <p className="text-sm mt-1 max-w-sm mx-auto" style={{ color: 'var(--fg-muted)' }}>
                 {searchQuery
                   ? 'Try a different search term.'
                   : activeFilter === 'by_you'
                   ? 'Documents you sign and finalize will appear in this section.'
-                  : activeFilter === 'by_others'
-                  ? 'Documents signed by recipients or external signers will appear here.'
-                  : 'Documents you sign and download will appear here with verification proofs.'}
+                  : 'Documents signed by recipients or external signers will appear here.'}
               </p>
             </div>
             {!searchQuery && (
