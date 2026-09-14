@@ -76,7 +76,6 @@ export const MultiSignerPanel: React.FC<MultiSignerPanelProps> = ({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 animate-fadeIn"
       style={{ background: 'rgba(44,44,36,0.50)', backdropFilter: 'blur(10px)' }}
-      onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
         className="card-organic max-w-md w-full max-h-[92vh] flex flex-col overflow-hidden animate-slideUp rounded-[1.75rem] sm:rounded-[2.5rem]"

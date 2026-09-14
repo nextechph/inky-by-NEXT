@@ -657,9 +657,6 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 animate-fadeIn"
       style={{ background: 'rgba(44,44,36,0.50)', backdropFilter: 'blur(10px)' }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
     >
       <div
         className="card-organic animate-slideUp w-full max-w-[96vw] sm:max-w-2xl md:max-w-3xl lg:max-w-4xl rounded-[1.75rem] sm:rounded-[2.5rem] overflow-hidden flex flex-col shadow-2xl transition-all duration-300"
