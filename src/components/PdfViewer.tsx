@@ -113,6 +113,18 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     scrollTop: 0,
   });
   const hasPannedRef = useRef<boolean>(false);
+  const isPinchingRef = useRef<boolean>(false);
+  const pinchDataRef = useRef<{
+    initialDist: number;
+    initialScale: number;
+    factor: number;
+    midClientX: number;
+    midClientY: number;
+    originX: number;
+    originY: number;
+    scrollLeft: number;
+    scrollTop: number;
+  } | null>(null);
   // Track whether dragging or resizing is currently active so mouseup flushes save
   const dragActiveRef = useRef(false);
   dragActiveRef.current = isDragging || isResizing;
@@ -234,39 +246,98 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     return () => { if (renderTask) renderTask.cancel(); };
   }, [pdfDoc, currentPage, scale]);
 
-  // Mobile pinch-to-zoom touch gesture handling
+  // Mobile pinch-to-zoom touch gesture handling (GPU-accelerated 60fps transform)
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
 
-    let initialDist: number | null = null;
-    let initialScale = 1.0;
-
     const onTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 2) {
+      if (e.touches.length === 2 && containerRef.current) {
         const t1 = e.touches[0];
         const t2 = e.touches[1];
-        initialDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-        initialScale = scale;
+        const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+        if (dist < 10) return;
+
+        const midX = (t1.clientX + t2.clientX) / 2;
+        const midY = (t1.clientY + t2.clientY) / 2;
+        const rect = containerRef.current.getBoundingClientRect();
+        const originX = midX - rect.left;
+        const originY = midY - rect.top;
+
+        isPinchingRef.current = true;
+        pinchDataRef.current = {
+          initialDist: dist,
+          initialScale: scale,
+          factor: 1,
+          midClientX: midX,
+          midClientY: midY,
+          originX,
+          originY,
+          scrollLeft: el.scrollLeft,
+          scrollTop: el.scrollTop,
+        };
+
+        // Prepare container for GPU-accelerated smooth transform
+        containerRef.current.style.transformOrigin = `${originX}px ${originY}px`;
+        containerRef.current.style.transition = 'none';
+        containerRef.current.style.willChange = 'transform';
       }
     };
 
     const onTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 2 && initialDist && initialDist > 10) {
+      if (e.touches.length === 2 && isPinchingRef.current && pinchDataRef.current) {
         if (e.cancelable) e.preventDefault();
         const t1 = e.touches[0];
         const t2 = e.touches[1];
         const currentDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-        const factor = currentDist / initialDist;
-        const targetScale = Math.min(3.0, Math.max(0.35, Math.round(initialScale * factor * 100) / 100));
-        userZoomedRef.current = true;
-        setScale(targetScale);
+        const factor = currentDist / pinchDataRef.current.initialDist;
+        pinchDataRef.current.factor = factor;
+
+        // Directly apply GPU transform - zero React re-renders, zero PDF.js canvas rebuilds during gesture!
+        if (containerRef.current) {
+          containerRef.current.style.transform = `scale(${factor})`;
+        }
       }
     };
 
     const onTouchEnd = (e: TouchEvent) => {
-      if (e.touches.length < 2) {
-        initialDist = null;
+      if (isPinchingRef.current && e.touches.length < 2) {
+        isPinchingRef.current = false;
+        const data = pinchDataRef.current;
+        pinchDataRef.current = null;
+        if (!data || !containerRef.current) return;
+
+        const factor = data.factor;
+        if (Math.abs(factor - 1) < 0.02) {
+          containerRef.current.style.transform = '';
+          containerRef.current.style.transformOrigin = '';
+          containerRef.current.style.willChange = 'auto';
+          return;
+        }
+
+        const targetScale = Math.min(3.0, Math.max(0.35, Math.round(data.initialScale * factor * 100) / 100));
+        userZoomedRef.current = true;
+
+        // Reset CSS transform
+        containerRef.current.style.transform = '';
+        containerRef.current.style.transformOrigin = '';
+        containerRef.current.style.willChange = 'auto';
+
+        // Adjust scroll position to maintain pinch center point
+        const scrollRect = el.getBoundingClientRect();
+        const relMidX = data.midClientX - scrollRect.left;
+        const relMidY = data.midClientY - scrollRect.top;
+        const newScrollLeft = (data.scrollLeft + relMidX) * factor - relMidX;
+        const newScrollTop  = (data.scrollTop  + relMidY) * factor - relMidY;
+
+        setScale(targetScale);
+
+        requestAnimationFrame(() => {
+          if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollLeft = Math.max(0, newScrollLeft);
+            scrollContainerRef.current.scrollTop  = Math.max(0, newScrollTop);
+          }
+        });
       }
     };
 
@@ -398,11 +469,11 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   };
 
   const handleFieldTouchStart = (fieldId: string, e: React.TouchEvent) => {
+    if (e.touches.length > 1) return;
     e.stopPropagation();
     setSelectedFieldId(fieldId);
     const field = fields.find((f) => f.id === fieldId);
     if (!field || isFieldLocked(field)) return;
-    if (e.touches.length !== 1) return;
 
     setIsDragging(true);
     if (!containerRef.current) return;
