@@ -218,6 +218,11 @@ export function saveLocalInboxLink(link: InboxLink): void {
   localStorage.setItem(INBOX_LINKS_KEY, JSON.stringify(links));
 }
 
+export function deleteLocalInboxLink(idOrToken: string): void {
+  const links = getLocalInboxLinks().filter((l) => l.id !== idOrToken && l.token !== idOrToken);
+  localStorage.setItem(INBOX_LINKS_KEY, JSON.stringify(links));
+}
+
 // ── Saved Signatures Storage ───────────────────────────────────────────────
 export function getSavedSignatures(): SavedSignature[] {
   try {

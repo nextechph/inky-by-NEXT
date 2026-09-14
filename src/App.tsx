@@ -83,6 +83,7 @@ export function App() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmDeleteReq, setConfirmDeleteReq] = useState<PendingSigningRequest | null>(null);
   const [confirmDeleteNotif, setConfirmDeleteNotif] = useState<SignedNotification | null>(null);
+  const [confirmDeleteLink, setConfirmDeleteLink] = useState<InboxLink | null>(null);
 
   // Saved Signatures renaming state
   const [editingSigId, setEditingSigId] = useState<string | null>(null);
@@ -302,6 +303,16 @@ export function App() {
       showToast('Signed document notification removed', 'info');
     } catch {
       showToast('Failed to remove notification', 'error');
+    }
+  };
+
+  const handleDeleteInboxLink = async (link: InboxLink) => {
+    try {
+      await inboxService.deleteLink(link.id, link.token);
+      setInboxLinks((prev) => prev.filter((l) => l.id !== link.id && l.token !== link.token));
+      showToast('Upload link deleted', 'info');
+    } catch {
+      showToast('Failed to delete upload link', 'error');
     }
   };
 
@@ -971,13 +982,33 @@ export function App() {
                     const url = `${window.location.origin}/inbox-submit/${link.token}`;
                     return (
                       <div key={link.id} className="card-organic rounded-[2rem] px-5 py-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <h4 className="font-bold text-sm text-foreground">
-                            {link.title || 'Inbox Upload Link'}
-                          </h4>
-                          <span className="badge-clay">
-                            {link.currentUses} / {link.maxUses ?? '∞'} Uses
-                          </span>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <h4 className="font-bold text-sm text-foreground truncate">
+                              {link.title || 'Inbox Upload Link'}
+                            </h4>
+                            {link.note && (
+                              <p className="text-xs text-muted-foreground truncate mt-0.5">
+                                {link.note}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="badge-clay">
+                              {link.currentUses} / {link.maxUses ?? '∞'} Uses
+                            </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setConfirmDeleteLink(link);
+                              }}
+                              className="p-1.5 sm:p-2 rounded-xl transition-all duration-200 hover:scale-110 hover:text-[#A85448] text-muted-foreground cursor-pointer"
+                              title="Delete upload link"
+                              aria-label="Delete upload link"
+                            >
+                              <Trash2 style={{ height: 15, width: 15 }} />
+                            </button>
+                          </div>
                         </div>
                         <div className="flex items-center gap-2 rounded-full px-4 py-2 bg-muted/60 border border-border">
                           <span className="text-xs font-mono select-all truncate flex-1 text-muted-foreground">
@@ -985,7 +1016,9 @@ export function App() {
                           </span>
                           <button
                             onClick={() => copyToClipboard(url)}
-                            className="shrink-0 transition-transform hover:scale-110 text-muted-foreground hover:text-foreground"
+                            className="shrink-0 transition-transform hover:scale-110 text-muted-foreground hover:text-foreground cursor-pointer p-1"
+                            title="Copy link"
+                            aria-label="Copy link"
                           >
                             {copiedLink === url ? <Check style={{ height: 14, width: 14, color: 'var(--moss)' }} /> : <Copy style={{ height: 14, width: 14 }} />}
                           </button>
@@ -1080,6 +1113,21 @@ export function App() {
           }
         }}
         onCancel={() => setConfirmDeleteNotif(null)}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(confirmDeleteLink)}
+        title="Delete Upload Link"
+        message={`Are you sure you want to delete the upload link "${confirmDeleteLink?.title || 'Inbox Upload Link'}"? External senders will no longer be able to submit documents with this link.`}
+        confirmLabel="Delete"
+        isDestructive={true}
+        onConfirm={() => {
+          if (confirmDeleteLink) {
+            handleDeleteInboxLink(confirmDeleteLink);
+            setConfirmDeleteLink(null);
+          }
+        }}
+        onCancel={() => setConfirmDeleteLink(null)}
       />
 
       <AuthModal

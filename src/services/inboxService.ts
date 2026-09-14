@@ -81,6 +81,27 @@ export const inboxService = {
     return newLink;
   },
 
+  async deleteLink(id: string, token?: string): Promise<boolean> {
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        let query = supabase.from('inbox_links').delete();
+        if (token) {
+          query = query.or(`id.eq.${id},token.eq.${token}`);
+        } else {
+          query = query.eq('id', id);
+        }
+        await query;
+      } catch (e) {
+        console.warn('Supabase delete link failed:', e);
+      }
+    }
+    storage.deleteLocalInboxLink(id);
+    if (token) {
+      storage.deleteLocalInboxLink(token);
+    }
+    return true;
+  },
+
   async validateToken(token: string): Promise<{ valid: boolean; title?: string; note?: string; error?: string }> {
     const cleanToken = (token || '').trim().replace(/\/+$/, '');
     if (!cleanToken) {
