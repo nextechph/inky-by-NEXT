@@ -476,9 +476,9 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
       }}
     >
       <div
-        className="card-organic animate-slideUp w-full sm:max-w-xl rounded-[1.75rem] sm:rounded-[2.5rem] overflow-hidden flex flex-col shadow-2xl"
+        className="card-organic animate-slideUp w-full max-w-[96vw] sm:max-w-2xl md:max-w-3xl lg:max-w-4xl rounded-[1.75rem] sm:rounded-[2.5rem] overflow-hidden flex flex-col shadow-2xl transition-all duration-300"
         style={{
-          maxHeight: 'min(96dvh, 880px)',
+          maxHeight: 'min(96dvh, 920px)',
           minHeight: 0,
         }}
         onClick={(e) => e.stopPropagation()}
@@ -552,11 +552,11 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
           >
             {/* Canvas well */}
             <div
-              className="relative rounded-[1.25rem] sm:rounded-[1.5rem] overflow-hidden select-none h-44 xs:h-52 sm:h-64"
+              className="relative rounded-[1.25rem] sm:rounded-[1.75rem] overflow-hidden select-none h-72 xs:h-80 sm:h-96 md:h-[400px] lg:h-[440px]"
               style={{
-                background: 'rgba(255,255,255,0.65)',
-                border: '2px dashed rgba(93,112,82,0.30)',
-                boxShadow: 'inset 0 2px 12px rgba(44,44,36,0.06)',
+                background: 'rgba(255,255,255,0.72)',
+                border: '2px dashed rgba(93,112,82,0.32)',
+                boxShadow: 'inset 0 2px 14px rgba(44,44,36,0.06)',
                 touchAction: 'none',
                 userSelect: 'none',
                 WebkitUserSelect: 'none',
@@ -576,92 +576,147 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                   WebkitUserSelect: 'none',
                 }}
               />
+
+              {/* Floating controls toolbar on the side of signature creation */}
+              <div
+                className="absolute left-2.5 sm:left-4 top-2.5 sm:top-4 z-20 flex flex-col items-center gap-2 p-1.5 sm:p-2 rounded-2xl sm:rounded-[1.25rem] shadow-lg select-none"
+                style={{
+                  background: 'rgba(253, 252, 248, 0.90)',
+                  backdropFilter: 'blur(16px)',
+                  WebkitBackdropFilter: 'blur(16px)',
+                  border: '1px solid rgba(93, 112, 82, 0.22)',
+                  boxShadow: '0 8px 24px -4px rgba(44, 44, 36, 0.12), 0 2px 6px rgba(44, 44, 36, 0.05)',
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Ink Color Swatches */}
+                <div className="flex flex-col items-center gap-1.5 sm:gap-2">
+                  {INK_COLORS.map((c) => {
+                    const isColorActive = penColor === c.value;
+                    return (
+                      <button
+                        key={c.value}
+                        type="button"
+                        onClick={() => handleColorChange(c.value)}
+                        title={c.label}
+                        aria-label={`Ink color: ${c.label}`}
+                        aria-pressed={isColorActive}
+                        className="h-6 w-6 sm:h-7 sm:w-7 rounded-full transition-all duration-200 hover:scale-110 cursor-pointer flex items-center justify-center shrink-0"
+                        style={{
+                          backgroundColor: c.value,
+                          boxShadow: isColorActive
+                            ? '0 0 0 2px #FDFAF4, 0 0 0 4px var(--moss)'
+                            : '0 1px 3px rgba(0,0,0,0.12)',
+                          transform: isColorActive ? 'scale(1.08)' : 'scale(1)',
+                        }}
+                      >
+                        {isColorActive && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-white/90 block shadow-sm" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Subtle Divider between color and thickness */}
+                <div
+                  className="w-5 h-[1px] my-0.5"
+                  style={{ background: 'rgba(93, 112, 82, 0.22)' }}
+                />
+
+                {/* Stroke Thickness Selector: Dots differing in thickness */}
+                <div className="flex flex-col items-center gap-1 sm:gap-1.5">
+                  {STROKE_WIDTH_OPTIONS.map((sw) => {
+                    const isActive = strokeWidth === sw.id;
+                    // Dot diameter: Fine=5px, Medium=9px, Bold=14px
+                    const dotSize = sw.id === 'thin' ? 5 : sw.id === 'medium' ? 9 : 14;
+                    return (
+                      <button
+                        key={sw.id}
+                        type="button"
+                        onClick={() => handleStrokeChange(sw.id)}
+                        title={`${sw.label} stroke thickness`}
+                        aria-label={`${sw.label} stroke`}
+                        aria-pressed={isActive}
+                        className="h-7 w-7 sm:h-8 sm:w-8 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer shrink-0"
+                        style={{
+                          background: isActive ? 'rgba(93, 112, 82, 0.12)' : 'transparent',
+                          boxShadow: isActive ? '0 0 0 1.5px var(--moss)' : 'none',
+                        }}
+                      >
+                        <span
+                          className="rounded-full transition-all duration-200 block"
+                          style={{
+                            width: dotSize,
+                            height: dotSize,
+                            backgroundColor: isActive ? penColor : 'var(--fg-muted)',
+                            opacity: isActive ? 1 : 0.45,
+                            transform: isActive ? 'scale(1.08)' : 'scale(1)',
+                          }}
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Clear Canvas button */}
               <button
                 onClick={handleClear}
-                className="absolute top-2.5 right-2.5 flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold transition-all duration-200 hover:scale-105"
+                className="absolute top-2.5 sm:top-4 right-2.5 sm:right-4 z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-200 hover:scale-105 cursor-pointer shadow-sm"
                 style={{
-                  background: 'rgba(253,252,248,0.85)',
+                  background: 'rgba(253,252,248,0.90)',
+                  backdropFilter: 'blur(12px)',
+                  WebkitBackdropFilter: 'blur(12px)',
                   color: 'var(--fg-muted)',
-                  border: '1px solid var(--border)',
+                  border: '1px solid rgba(93, 112, 82, 0.20)',
+                  boxShadow: '0 2px 8px rgba(44,44,36,0.06)',
                 }}
                 aria-label="Clear signature"
               >
-                <RotateCcw style={{ height: 11, width: 11 }} />
+                <RotateCcw style={{ height: 12, width: 12 }} />
                 <span>Clear</span>
               </button>
-            </div>
 
-            {/* Ink color swatches */}
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold" style={{ color: 'var(--fg-muted)' }}>Ink color</span>
-              <div className="flex gap-2.5">
-                {INK_COLORS.map((c) => (
-                  <button
-                    key={c.value}
-                    type="button"
-                    onClick={() => handleColorChange(c.value)}
-                    title={c.label}
-                    className="h-7 w-7 rounded-full transition-all duration-200 hover:scale-110"
-                    style={{
-                      backgroundColor: c.value,
-                      outline: penColor === c.value ? `3px solid var(--moss)` : '3px solid transparent',
-                      outlineOffset: 2,
-                    }}
-                    aria-label={c.label}
-                    aria-pressed={penColor === c.value}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* Stroke thickness selector */}
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold" style={{ color: 'var(--fg-muted)' }}>Stroke thickness</span>
+              {/* Faint signature guideline in negative space */}
               <div
-                className="flex items-center gap-1 p-1 rounded-full"
-                style={{ background: 'var(--bg-stone)', border: '1px solid var(--border-light)' }}
+                className="absolute bottom-8 sm:bottom-10 left-10 sm:left-14 right-10 sm:right-14 pointer-events-none select-none flex items-center gap-2.5 transition-opacity duration-300"
+                style={{
+                  opacity: drawnPreview || (drawnPointsRef.current && drawnPointsRef.current.length > 0) ? 0 : 0.28,
+                }}
               >
-                {STROKE_WIDTH_OPTIONS.map((sw) => {
-                  const isActive = strokeWidth === sw.id;
-                  return (
-                    <button
-                      key={sw.id}
-                      type="button"
-                      onClick={() => handleStrokeChange(sw.id)}
-                      className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all duration-200"
-                      style={{
-                        background: isActive ? 'var(--moss)' : 'transparent',
-                        color: isActive ? '#F3F4F1' : 'var(--fg-muted)',
-                        boxShadow: isActive ? '0 2px 8px rgba(93,112,82,0.25)' : 'none',
-                      }}
-                      aria-pressed={isActive}
-                      title={`${sw.label} stroke`}
-                    >
-                      <span
-                        className="rounded-full inline-block"
-                        style={{
-                          width: 14,
-                          height: sw.lineWeight,
-                          backgroundColor: isActive ? '#F3F4F1' : 'currentColor',
-                        }}
-                      />
-                      <span>{sw.label}</span>
-                    </button>
-                  );
-                })}
+                <span
+                  className="font-serif italic text-base sm:text-lg select-none"
+                  style={{ color: 'var(--moss)' }}
+                >
+                  ×
+                </span>
+                <div
+                  className="flex-1 border-b border-dashed"
+                  style={{ borderColor: 'var(--moss)' }}
+                />
+                <span
+                  className="text-[10px] sm:text-xs font-semibold tracking-wider uppercase select-none opacity-80"
+                  style={{ color: 'var(--moss)' }}
+                >
+                  Sign on the line
+                </span>
               </div>
             </div>
 
             {/* Signature Name Input */}
-            <div>
-              <label className="block text-xs font-bold mb-1.5" style={{ color: 'var(--fg-muted)' }}>
-                Signature Name <span className="font-normal opacity-70">(optional)</span>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3 pt-1">
+              <label className="text-xs font-bold shrink-0" style={{ color: 'var(--fg-muted)' }}>
+                Signature Name <span className="font-normal opacity-70">(optional)</span>:
               </label>
               <input
                 type="text"
                 value={sigLabel}
                 onChange={(e) => setSigLabel(e.target.value)}
-                className="input-organic h-9 text-xs"
+                className="input-organic h-8 sm:h-9 text-xs flex-1"
                 placeholder="e.g. My Formal Signature, Initial…"
               />
             </div>

@@ -131,19 +131,29 @@ export function App() {
   };
 
   // Extract signToken from /sign/:token, ?sign=:token, or #/sign/:token
+  const sanitizeToken = (raw: string | null | undefined): string | null => {
+    if (!raw) return null;
+    const clean = decodeURIComponent(raw).split('?')[0].split('#')[0].replace(/\/+$/, '').trim();
+    return clean.length > 0 ? clean : null;
+  };
+
   const searchParams = new URLSearchParams(currentSearch);
-  const querySignToken = searchParams.get('sign');
-  const queryInboxToken = searchParams.get('inbox');
+  const querySignToken = sanitizeToken(searchParams.get('sign'));
+  const queryInboxToken = sanitizeToken(searchParams.get('inbox'));
 
-  const hashSignToken = currentHash.startsWith('#/sign/') ? currentHash.slice(7) : null;
-  const hashInboxToken = currentHash.startsWith('#/inbox-submit/') ? currentHash.slice(14) : null;
+  const hashSignToken = sanitizeToken(currentHash.startsWith('#/sign/') ? currentHash.slice(7) : null);
+  const hashInboxToken = sanitizeToken(currentHash.startsWith('#/inbox-submit/') ? currentHash.slice(14) : null);
 
-  const pathSignToken = currentPath.startsWith('/sign/')
-    ? currentPath.split('/sign/')[1]?.split('?')[0]
-    : null;
-  const pathInboxToken = currentPath.startsWith('/inbox-submit/')
-    ? currentPath.split('/inbox-submit/')[1]?.split('?')[0]
-    : null;
+  const pathSignToken = sanitizeToken(
+    currentPath.startsWith('/sign/')
+      ? currentPath.split('/sign/')[1]
+      : null
+  );
+  const pathInboxToken = sanitizeToken(
+    currentPath.startsWith('/inbox-submit/')
+      ? currentPath.split('/inbox-submit/')[1]
+      : null
+  );
 
   const signToken = pathSignToken || querySignToken || hashSignToken;
   const isSignRoute = Boolean(signToken);

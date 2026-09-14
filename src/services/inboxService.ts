@@ -2,7 +2,7 @@
 import { InboxLink } from '../types';
 import * as storage from '../lib/storage';
 import { documentService } from './documentService';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, supabasePublic, isSupabaseConfigured } from '../lib/supabase';
 import { uid } from '../utils';
 
 export const inboxService = {
@@ -82,33 +82,44 @@ export const inboxService = {
   },
 
   async validateToken(token: string): Promise<{ valid: boolean; title?: string; note?: string; error?: string }> {
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('inbox_links')
-          .select('title, note, expires_at, max_uses, current_uses, active')
-          .eq('token', token)
-          .single();
+    const cleanToken = (token || '').trim().replace(/\/+$/, '');
+    if (!cleanToken) {
+      return { valid: false, error: 'Invalid or missing upload link token.' };
+    }
 
-        if (!error && data) {
-          if (!data.active) {
-            return { valid: false, error: 'This upload link is no longer active.' };
+    if (isSupabaseConfigured()) {
+      // Prioritize supabasePublic (unauthenticated anon client).
+      // This guarantees that PostgreSQL evaluates the public/anon RLS policy
+      // even if the user has an active login session in this browser.
+      const clients = [supabasePublic, supabase].filter(Boolean);
+      for (const client of clients) {
+        try {
+          const { data, error } = await client!
+            .from('inbox_links')
+            .select('title, note, expires_at, max_uses, current_uses, active')
+            .eq('token', cleanToken)
+            .maybeSingle();
+
+          if (!error && data) {
+            if (!data.active) {
+              return { valid: false, error: 'This upload link is no longer active.' };
+            }
+            if (data.expires_at && new Date(data.expires_at) < new Date()) {
+              return { valid: false, error: 'This upload link has expired.' };
+            }
+            if (data.max_uses && data.current_uses >= data.max_uses) {
+              return { valid: false, error: 'This upload link has reached its maximum submissions.' };
+            }
+            return { valid: true, title: data.title, note: data.note };
           }
-          if (data.expires_at && new Date(data.expires_at) < new Date()) {
-            return { valid: false, error: 'This upload link has expired.' };
-          }
-          if (data.max_uses && data.current_uses >= data.max_uses) {
-            return { valid: false, error: 'This upload link has reached its maximum submissions.' };
-          }
-          return { valid: true, title: data.title, note: data.note };
+        } catch (e) {
+          console.warn('Supabase validate attempt failed:', e);
         }
-      } catch (e) {
-        console.warn('Supabase validate error, falling back to local check:', e);
       }
     }
 
     const links = storage.getLocalInboxLinks();
-    const link = links.find((l) => l.token === token);
+    const link = links.find((l) => l.token === cleanToken);
     if (!link) {
       return { valid: false, error: 'Invalid or expired upload link.' };
     }
@@ -122,49 +133,86 @@ export const inboxService = {
   },
 
   async submitInbound(token: string, file: File, senderName: string, senderEmail: string, title?: string) {
+    const cleanToken = (token || '').trim().replace(/\/+$/, '');
     let cloudDocumentId: string | null = null;
 
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const fileExt = file.name.split('.').pop();
-        const filePath = `inbound/${token}_${Date.now()}.${fileExt}`;
+    if (isSupabaseConfigured()) {
+      const client = supabasePublic || supabase;
+      if (client) {
+        try {
+          const fileExt = file.name.split('.').pop();
+          const filePath = `inbound/${cleanToken}_${Date.now()}.${fileExt}`;
 
-        // 1. Upload to inbound bucket
-        const { error: uploadError } = await supabase.storage
-          .from('inbound')
-          .upload(filePath, file, { contentType: file.type });
+          // 1. Upload to inbound bucket (try public client first, fallback to auth client)
+          let uploadRes = await client.storage
+            .from('inbound')
+            .upload(filePath, file, { contentType: file.type });
 
-        if (!uploadError) {
-          // 2. Fetch owner from link
-          const { data: linkData } = await supabase
-            .from('inbox_links')
-            .select('id, user_id')
-            .eq('token', token)
-            .single();
+          if (uploadRes.error && supabase && supabase !== client) {
+            uploadRes = await supabase.storage
+              .from('inbound')
+              .upload(filePath, file, { contentType: file.type });
+          }
 
-          const docId = `doc_${uid()}`;
-          const docTitle = title || `${file.name} (from ${senderName})`;
+          if (!uploadRes.error) {
+            // 2. Fetch owner from link
+            let linkRes = await client
+              .from('inbox_links')
+              .select('id, user_id')
+              .eq('token', cleanToken)
+              .maybeSingle();
 
-          // 3. Create document record
-          await supabase.from('documents').insert({
-            id: docId,
-            user_id: linkData?.user_id,
-            title: docTitle,
-            original_file_name: file.name,
-            file_path: filePath,
-            status: 'pending',
-            source: 'inbound',
-            sender_name: senderName,
-            sender_email: senderEmail,
-            inbound_token: token,
-          });
+            if (!linkRes.data && supabase && supabase !== client) {
+              linkRes = await supabase
+                .from('inbox_links')
+                .select('id, user_id')
+                .eq('token', cleanToken)
+                .maybeSingle();
+            }
 
-          // 4. Increment uses
-          await supabase.rpc('increment_inbox_link_uses', { target_token: token });
-          cloudDocumentId = docId;
+            const docId = `doc_${uid()}`;
+            const docTitle = title || `${file.name} (from ${senderName})`;
+
+            // 3. Create document record
+            let insertRes = await client.from('documents').insert({
+              id: docId,
+              user_id: linkRes.data?.user_id || null,
+              title: docTitle,
+              original_file_name: file.name,
+              file_path: filePath,
+              status: 'pending',
+              source: 'inbound',
+              sender_name: senderName,
+              sender_email: senderEmail,
+              inbound_token: cleanToken,
+            });
+
+            if (insertRes.error && supabase && supabase !== client) {
+              insertRes = await supabase.from('documents').insert({
+                id: docId,
+                user_id: linkRes.data?.user_id || null,
+                title: docTitle,
+                original_file_name: file.name,
+                file_path: filePath,
+                status: 'pending',
+                source: 'inbound',
+                sender_name: senderName,
+                sender_email: senderEmail,
+                inbound_token: cleanToken,
+              });
+            }
+
+            // 4. Increment uses
+            const rpcRes = await client.rpc('increment_inbox_link_uses', { target_token: cleanToken });
+            if (rpcRes.error && supabase && supabase !== client) {
+              await supabase.rpc('increment_inbox_link_uses', { target_token: cleanToken });
+            }
+
+            cloudDocumentId = docId;
+          }
+        } catch (e) {
+          console.warn('Supabase cloud submission failed, saving to local fallback:', e);
         }
-      } catch (e) {
-        console.warn('Supabase cloud submission failed, saving to local fallback:', e);
       }
     }
 
@@ -176,7 +224,7 @@ export const inboxService = {
     storage.saveLocalDocumentMeta(doc);
 
     const links = storage.getLocalInboxLinks();
-    const link = links.find((l) => l.token === token);
+    const link = links.find((l) => l.token === cleanToken);
     if (link) {
       link.currentUses += 1;
       localStorage.setItem('inky_local_inbox_links', JSON.stringify(links));

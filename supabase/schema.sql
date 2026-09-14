@@ -136,7 +136,7 @@ CREATE POLICY "Owner can do all on documents"
 CREATE POLICY "Public can insert inbound documents with valid token"
     ON public.documents
     FOR INSERT
-    TO anon
+    TO public
     WITH CHECK (
         source = 'inbound' AND
         EXISTS (
@@ -248,7 +248,7 @@ CREATE POLICY "Owner can do all on inbox_links"
 CREATE POLICY "Public can read active inbox_links"
     ON public.inbox_links
     FOR SELECT
-    TO anon
+    TO public
     USING (
         active = true 
         AND (expires_at IS NULL OR expires_at > NOW()) 
@@ -285,7 +285,7 @@ CREATE POLICY "Signers can download document PDFs"
 CREATE POLICY "Public can upload to inbound bucket"
     ON storage.objects
     FOR INSERT
-    TO anon
+    TO public
     WITH CHECK (bucket_id = 'inbound');
 
 -- Owner can read inbound bucket objects that belong to them
