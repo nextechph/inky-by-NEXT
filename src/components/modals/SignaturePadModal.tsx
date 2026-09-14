@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import SignaturePad from 'signature_pad';
-import { X, PenTool, Type, Upload, History, Check, RotateCcw, ChevronDown, Minus, Plus } from 'lucide-react';
+import { X, PenTool, Type, Upload, History, Check, RotateCcw, ChevronDown, Minus, Plus, ShieldCheck } from 'lucide-react';
 import { saveSignature, getSavedSignatures } from '../../lib/storage';
 import { SavedSignature } from '../../types';
 import { trimCanvas, processUploadedSignature, combineSignatureAndName } from '../../utils';
@@ -69,10 +69,21 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
   const [combinedPreviewUrl, setCombinedPreviewUrl] = useState<string | null>(null);
   const [isDefault, setIsDefault]                   = useState(true);
   const [savedSigs, setSavedSigs]                   = useState<SavedSignature[]>([]);
+  const [stylusMode, setStylusMode]                 = useState(true);
+  const [stylusDetected, setStylusDetected]         = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const sigPadRef = useRef<any | null>(null);
   const drawnPointsRef = useRef<any[] | null>(null);
+
+  const stylusModeRef = useRef(stylusMode);
+  stylusModeRef.current = stylusMode;
+
+  const stylusDetectedRef = useRef(stylusDetected);
+  stylusDetectedRef.current = stylusDetected;
+
+  const activePointerIdRef = useRef<number | null>(null);
+  const activePointerTypeRef = useRef<string | null>(null);
 
   const getCanvasBottomY = (canvas: HTMLCanvasElement | null): number | null => {
     if (!canvas) return null;
@@ -106,11 +117,14 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
       setDrawnPreview(null);
       setSigBottomY(null);
       setCombinedPreviewUrl(null);
+      setStylusDetected(false);
     } else {
       drawnPointsRef.current = null;
       setDrawnPreview(null);
       setSigBottomY(null);
       setCombinedPreviewUrl(null);
+      activePointerIdRef.current = null;
+      activePointerTypeRef.current = null;
     }
   }, [isOpen]);
 
@@ -160,7 +174,36 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
         minWidth: strokeConfig.min,
         maxWidth: strokeConfig.max,
         throttle: 0,
+        velocityFilterWeight: 0.7,
       });
+
+      // Capacitive Stylus Pressure & Dynamic Calligraphy Support
+      const origCalcWidth = (pad as any)._strokeWidth.bind(pad);
+      (pad as any)._strokeWidth = function (velocity: number, options: any) {
+        const lastGroup = this._data[this._data.length - 1];
+        const lastPoint = lastGroup?.points[lastGroup.points.length - 1];
+
+        // Active capacitive styluses (Apple Pencil, Samsung S-Pen, Surface Pen) report true pressure (0.01 - 1.0)
+        if (
+          lastPoint &&
+          typeof lastPoint.pressure === 'number' &&
+          lastPoint.pressure > 0.01 &&
+          lastPoint.pressure <= 1.0 &&
+          Math.abs(lastPoint.pressure - 0.5) > 0.02
+        ) {
+          if (!stylusDetectedRef.current) {
+            stylusDetectedRef.current = true;
+            setStylusDetected(true);
+          }
+          const p = Math.pow(lastPoint.pressure, 0.75);
+          const v = 1 / (velocity + 1);
+          const dynamic = p * 0.75 + v * 0.25;
+          return options.minWidth + (options.maxWidth - options.minWidth) * dynamic;
+        }
+
+        return origCalcWidth(velocity, options);
+      };
+
       pad.addEventListener('endStroke', () => {
         drawnPointsRef.current = pad.toData();
         try {
@@ -318,8 +361,142 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
       resizeObserver.observe(canvas);
     }
 
+    // ── Capacitive Stylus & Palm Rejection Event Handlers ──
+    const handlePointerDownCapture = (e: PointerEvent) => {
+      const isPen = e.pointerType === 'pen';
+      if (isPen) {
+        stylusDetectedRef.current = true;
+        setStylusDetected(true);
+        activePointerTypeRef.current = 'pen';
+        activePointerIdRef.current = e.pointerId;
+      }
+
+      // If active stylus is drawing, drop any secondary touch/palm contacts
+      if (activePointerTypeRef.current === 'pen' && !isPen) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        return;
+      }
+
+      if (stylusModeRef.current) {
+        // Multi-touch rejection: if another pointer is already drawing, reject new contact
+        if (activePointerIdRef.current !== null && activePointerIdRef.current !== e.pointerId) {
+          e.stopImmediatePropagation();
+          e.preventDefault();
+          return;
+        }
+
+        // Palm contact area rejection: large contact geometry (> 34px) is a resting palm
+        if (e.pointerType === 'touch' && ((e.width && e.width > 34) || (e.height && e.height > 34))) {
+          e.stopImmediatePropagation();
+          e.preventDefault();
+          return;
+        }
+
+        // Reject non-primary touch events
+        if (e.isPrimary === false && !isPen) {
+          e.stopImmediatePropagation();
+          e.preventDefault();
+          return;
+        }
+      }
+
+      activePointerIdRef.current = e.pointerId;
+      if (!isPen) {
+        activePointerTypeRef.current = e.pointerType;
+      }
+
+      try {
+        canvas?.setPointerCapture(e.pointerId);
+      } catch {}
+    };
+
+    const handlePointerMoveCapture = (e: PointerEvent) => {
+      if (activePointerTypeRef.current === 'pen' && e.pointerType !== 'pen') {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        return;
+      }
+
+      if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        return;
+      }
+
+      if (e.pointerType === 'pen' && !stylusDetectedRef.current) {
+        stylusDetectedRef.current = true;
+        setStylusDetected(true);
+      }
+    };
+
+    const handlePointerUpCapture = (e: PointerEvent) => {
+      if (e.pointerId === activePointerIdRef.current) {
+        activePointerIdRef.current = null;
+        activePointerTypeRef.current = null;
+        try {
+          if (canvas?.hasPointerCapture(e.pointerId)) {
+            canvas.releasePointerCapture(e.pointerId);
+          }
+        } catch {}
+      }
+    };
+
+    // iOS Safari Apple Pencil touch event palm rejection
+    const handleTouchStartCapture = (e: TouchEvent) => {
+      let hasStylus = false;
+      for (let i = 0; i < e.touches.length; i++) {
+        const t = e.touches[i] as any;
+        if (t.touchType === 'stylus') {
+          hasStylus = true;
+          stylusDetectedRef.current = true;
+          setStylusDetected(true);
+          break;
+        }
+      }
+
+      if (stylusModeRef.current && e.touches.length > 1) {
+        if (hasStylus) {
+          const changedTouch = e.changedTouches[0] as any;
+          if (changedTouch.touchType !== 'stylus') {
+            e.stopImmediatePropagation();
+            return;
+          }
+        } else {
+          const changedTouch = e.changedTouches[0];
+          if (changedTouch !== e.touches[0]) {
+            e.stopImmediatePropagation();
+            return;
+          }
+        }
+      }
+    };
+
+    const handleTouchMoveCapture = (e: TouchEvent) => {
+      if (stylusModeRef.current && e.touches.length > 1) {
+        const hasStylus = Array.from(e.touches).some((t: any) => (t as any).touchType === 'stylus');
+        if (hasStylus) {
+          const changed = e.changedTouches[0] as any;
+          if (changed.touchType !== 'stylus') {
+            e.stopImmediatePropagation();
+            return;
+          }
+        }
+      }
+    };
+
+    if (canvas) {
+      canvas.addEventListener('pointerdown', handlePointerDownCapture, { capture: true });
+      canvas.addEventListener('pointermove', handlePointerMoveCapture, { capture: true });
+      canvas.addEventListener('pointerup', handlePointerUpCapture, { capture: true });
+      canvas.addEventListener('touchstart', handleTouchStartCapture, { capture: true, passive: false });
+      canvas.addEventListener('touchmove', handleTouchMoveCapture, { capture: true, passive: false });
+    }
+
     // Safeguard: handle pointercancel so drawing doesn't freeze
     const handlePointerCancel = () => {
+      activePointerIdRef.current = null;
+      activePointerTypeRef.current = null;
       if (sigPadRef.current) {
         (sigPadRef.current as any)._drawingStroke = false;
         sigPadRef.current.on();
@@ -341,6 +518,11 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
       window.removeEventListener('resize', handleWindowResize);
       if (resizeObserver) resizeObserver.disconnect();
       if (canvas) {
+        canvas.removeEventListener('pointerdown', handlePointerDownCapture, { capture: true });
+        canvas.removeEventListener('pointermove', handlePointerMoveCapture, { capture: true });
+        canvas.removeEventListener('pointerup', handlePointerUpCapture, { capture: true });
+        canvas.removeEventListener('touchstart', handleTouchStartCapture, { capture: true });
+        canvas.removeEventListener('touchmove', handleTouchMoveCapture, { capture: true });
         canvas.removeEventListener('pointercancel', handlePointerCancel);
       }
       if (sigPadRef.current) {
@@ -661,7 +843,66 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                     );
                   })}
                 </div>
+
+                {/* Subtle Divider between thickness and stylus */}
+                <div
+                  className="w-5 h-[1px] my-0.5"
+                  style={{ background: 'rgba(93, 112, 82, 0.22)' }}
+                />
+
+                {/* Capacitive Stylus & Palm Rejection Mode Button */}
+                <button
+                  type="button"
+                  onClick={() => setStylusMode((prev) => !prev)}
+                  title={
+                    stylusMode
+                      ? 'Stylus Mode & Palm Rejection: Active (ignoring palm touches)'
+                      : 'Enable Stylus Mode & Palm Rejection'
+                  }
+                  aria-label="Stylus mode and palm rejection"
+                  aria-pressed={stylusMode}
+                  className="h-7 w-7 sm:h-8 sm:w-8 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer shrink-0 relative"
+                  style={{
+                    background: stylusMode ? 'rgba(93, 112, 82, 0.14)' : 'transparent',
+                    boxShadow: stylusMode ? '0 0 0 1.5px var(--moss)' : 'none',
+                  }}
+                >
+                  <PenTool
+                    style={{
+                      height: 13,
+                      width: 13,
+                      color: stylusMode ? 'var(--moss)' : 'var(--fg-muted)',
+                      opacity: stylusMode ? 1 : 0.45,
+                      transform: 'rotate(-45deg)',
+                    }}
+                  />
+                  {stylusDetected && (
+                    <span
+                      className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full animate-pulse"
+                      style={{ background: 'var(--moss)', boxShadow: '0 0 0 1.5px #FDFAF4' }}
+                      title="Stylus pen active"
+                    />
+                  )}
+                </button>
               </div>
+
+              {/* Stylus active badge */}
+              {stylusDetected && (
+                <div
+                  className="absolute top-2.5 sm:top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold select-none pointer-events-none transition-all duration-300 animate-fadeIn"
+                  style={{
+                    background: 'rgba(253, 252, 248, 0.92)',
+                    backdropFilter: 'blur(12px)',
+                    WebkitBackdropFilter: 'blur(12px)',
+                    color: 'var(--moss)',
+                    border: '1px solid rgba(93, 112, 82, 0.25)',
+                    boxShadow: '0 2px 8px rgba(44, 44, 36, 0.08)',
+                  }}
+                >
+                  <ShieldCheck style={{ height: 12, width: 12 }} />
+                  <span>Stylus Connected • Palm Rejection Active</span>
+                </div>
+              )}
 
               {/* Clear Canvas button */}
               <button
