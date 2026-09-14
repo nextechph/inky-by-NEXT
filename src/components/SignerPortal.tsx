@@ -1818,15 +1818,6 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
                                   alt="Signature"
                                   className="h-full w-full object-contain pointer-events-none select-none"
                                 />
-                                <div className="absolute inset-0 bg-black/0 hover:bg-black/15 transition-colors flex items-center justify-center opacity-0 group-hover/sig:opacity-100 rounded-lg">
-                                  <span
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold text-white shadow-md transition-transform transform group-hover/sig:scale-100 scale-95"
-                                    style={{ background: 'var(--moss)' }}
-                                  >
-                                    <PenTool className="h-2.5 w-2.5" />
-                                    <span>Redo Signature</span>
-                                  </span>
-                                </div>
                               </div>
                             ) : (
                               <img

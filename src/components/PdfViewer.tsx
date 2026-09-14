@@ -1121,17 +1121,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                         alt="Signature"
                         className="h-full w-full object-contain pointer-events-none select-none"
                       />
-                      {!locked && (
-                        <div className="absolute inset-0 bg-black/0 hover:bg-black/15 transition-colors flex items-center justify-center opacity-0 group-hover/sig:opacity-100 cursor-pointer rounded-lg">
-                          <span
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold text-white shadow-md transition-transform transform group-hover/sig:scale-100 scale-95"
-                            style={{ background: 'var(--moss)' }}
-                          >
-                            <RotateCcw style={{ height: 10, width: 10 }} />
-                            <span>Redo Signature</span>
-                          </span>
-                        </div>
-                      )}
                     </div>
                   ) : (
                     <div
