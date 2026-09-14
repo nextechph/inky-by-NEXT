@@ -17,6 +17,8 @@ import {
   Lock,
   ShieldCheck,
   FileSignature,
+  RotateCcw,
+  Pencil,
 } from 'lucide-react';
 import { SignatureField, FieldType, SavedSignature, Recipient } from '../types';
 import { getDefaultSignature, getSavedSignatures } from '../lib/storage';
@@ -128,6 +130,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   // Track whether dragging or resizing is currently active so mouseup flushes save
   const dragActiveRef = useRef(false);
   dragActiveRef.current = isDragging || isResizing;
+  // Track field drag start position and movement to distinguish click from drag
+  const fieldDragStartRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  const hasDraggedFieldRef = useRef<boolean>(false);
 
   useEffect(() => {
     const handleGlobalMouseUp = () => {
@@ -137,6 +142,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       setIsDragging(false);
       setIsResizing(false);
       setIsPanning(false);
+      fieldDragStartRef.current = null;
     };
     window.addEventListener('mouseup', handleGlobalMouseUp);
     window.addEventListener('touchend', handleGlobalMouseUp);
@@ -511,6 +517,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     e.stopPropagation();
     setSelectedFieldId(fieldId);
     
+    fieldDragStartRef.current = { clientX: e.clientX, clientY: e.clientY };
+    hasDraggedFieldRef.current = false;
+
     const field = fields.find((f) => f.id === fieldId);
     if (!field || isFieldLocked(field)) return;
 
@@ -531,13 +540,17 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     if (e.touches.length > 1) return;
     e.stopPropagation();
     setSelectedFieldId(fieldId);
+
+    const touch = e.touches[0];
+    fieldDragStartRef.current = { clientX: touch.clientX, clientY: touch.clientY };
+    hasDraggedFieldRef.current = false;
+
     const field = fields.find((f) => f.id === fieldId);
     if (!field || isFieldLocked(field)) return;
 
     setIsDragging(true);
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    const touch = e.touches[0];
     const clickX = touch.clientX - rect.left;
     const clickY = touch.clientY - rect.top;
     const fieldPixelX = (field.x / 100) * rect.width;
@@ -552,13 +565,23 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     if (!isDragging || selectedFieldId !== fieldId || !containerRef.current) return;
     if (e.touches.length !== 1) return;
     if (e.cancelable) e.preventDefault();
+
     const touch = e.touches[0];
-    const rect = containerRef.current.getBoundingClientRect();
-    const mouseX = touch.clientX - rect.left;
-    const mouseY = touch.clientY - rect.top;
-    const pctX = Math.max(0, Math.min(92, ((mouseX - dragOffset.x) / rect.width) * 100));
-    const pctY = Math.max(0, Math.min(95, ((mouseY - dragOffset.y) / rect.height) * 100));
-    setFields((prev) => prev.map((f) => (f.id === selectedFieldId ? { ...f, x: pctX, y: pctY } : f)));
+    if (fieldDragStartRef.current) {
+      const dist = Math.hypot(touch.clientX - fieldDragStartRef.current.clientX, touch.clientY - fieldDragStartRef.current.clientY);
+      if (dist > 4) {
+        hasDraggedFieldRef.current = true;
+      }
+    }
+
+    if (hasDraggedFieldRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const mouseX = touch.clientX - rect.left;
+      const mouseY = touch.clientY - rect.top;
+      const pctX = Math.max(0, Math.min(92, ((mouseX - dragOffset.x) / rect.width) * 100));
+      const pctY = Math.max(0, Math.min(95, ((mouseY - dragOffset.y) / rect.height) * 100));
+      setFields((prev) => prev.map((f) => (f.id === selectedFieldId ? { ...f, x: pctX, y: pctY } : f)));
+    }
   };
 
   const handleResizeMouseDown = (fieldId: string, e: React.MouseEvent) => {
@@ -646,11 +669,19 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     const rect = containerRef.current.getBoundingClientRect();
 
     if (isDragging) {
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-      const pctX = Math.max(0, Math.min(92, ((mouseX - dragOffset.x) / rect.width) * 100));
-      const pctY = Math.max(0, Math.min(95, ((mouseY - dragOffset.y) / rect.height) * 100));
-      setFields((prev) => prev.map((f) => (f.id === selectedFieldId ? { ...f, x: pctX, y: pctY } : f)));
+      if (fieldDragStartRef.current) {
+        const dist = Math.hypot(e.clientX - fieldDragStartRef.current.clientX, e.clientY - fieldDragStartRef.current.clientY);
+        if (dist > 3) {
+          hasDraggedFieldRef.current = true;
+        }
+      }
+      if (hasDraggedFieldRef.current) {
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const pctX = Math.max(0, Math.min(92, ((mouseX - dragOffset.x) / rect.width) * 100));
+        const pctY = Math.max(0, Math.min(95, ((mouseY - dragOffset.y) / rect.height) * 100));
+        setFields((prev) => prev.map((f) => (f.id === selectedFieldId ? { ...f, x: pctX, y: pctY } : f)));
+      }
     } else if (isResizing) {
       const deltaX = ((e.clientX - resizeStart.x) / rect.width) * 100;
       const deltaY = ((e.clientY - resizeStart.y) / rect.height) * 100;
@@ -671,12 +702,13 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   };
 
   const handleMouseUp = () => {
-    if (dragActiveRef.current) {
+    if (dragActiveRef.current && hasDraggedFieldRef.current) {
       useDocumentStore.getState().saveCurrentFields();
     }
     setIsDragging(false);
     setIsResizing(false);
     setIsPanning(false);
+    fieldDragStartRef.current = null;
   };
 
   const currentPageFields = fields.filter((f) => f.pageNumber === currentPage);
@@ -998,7 +1030,24 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 onTouchEnd={handleMouseUp}
                 onClick={(e) => {
                   e.stopPropagation();
-                  setSelectedFieldId(field.id);
+                  if (hasDraggedFieldRef.current) return;
+                  if (field.fieldType === 'signature' && !locked) {
+                    if (isSelected) {
+                      // Already selected, clicking again opens modal to edit / redo!
+                      onOpenSignatureModal(field.id);
+                    } else {
+                      setSelectedFieldId(field.id);
+                    }
+                  } else {
+                    setSelectedFieldId(field.id);
+                  }
+                }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  if (field.fieldType === 'signature' && !locked) {
+                    setSelectedFieldId(field.id);
+                    onOpenSignatureModal(field.id);
+                  }
                 }}
                 style={{
                   left:     `${field.x}%`,
@@ -1036,11 +1085,34 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 )}
                 {field.fieldType === 'signature' ? (
                   field.value?.startsWith('data:image') ? (
-                    <img
-                      src={field.value}
-                      alt="Signature"
-                      className="h-full w-full object-contain pointer-events-none select-none"
-                    />
+                    <div
+                      className="relative w-full h-full flex items-center justify-center group/sig select-none overflow-hidden"
+                      onClick={(e) => {
+                        if (!hasDraggedFieldRef.current && !locked) {
+                          e.stopPropagation();
+                          setSelectedFieldId(field.id);
+                          onOpenSignatureModal(field.id);
+                        }
+                      }}
+                      title={locked ? undefined : 'Click to edit or redo signature'}
+                    >
+                      <img
+                        src={field.value}
+                        alt="Signature"
+                        className="h-full w-full object-contain pointer-events-none select-none"
+                      />
+                      {!locked && (
+                        <div className="absolute inset-0 bg-black/0 hover:bg-black/15 transition-colors flex items-center justify-center opacity-0 group-hover/sig:opacity-100 cursor-pointer rounded-lg">
+                          <span
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold text-white shadow-md transition-transform transform group-hover/sig:scale-100 scale-95"
+                            style={{ background: 'var(--moss)' }}
+                          >
+                            <RotateCcw style={{ height: 10, width: 10 }} />
+                            <span>Redo Signature</span>
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <div
                       onClick={(e) => {
@@ -1106,6 +1178,23 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                       </div>
                     ) : (
                       <>
+                        {/* Redo / Edit button for signature fields */}
+                        {field.fieldType === 'signature' && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenSignatureModal(field.id);
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold text-white shadow-xs transition-all duration-150 hover:brightness-110 active:scale-95 cursor-pointer shrink-0"
+                            style={{ background: 'var(--moss)' }}
+                            title="Edit or redo signature"
+                          >
+                            <RotateCcw style={{ height: 11, width: 11 }} />
+                            <span>{field.value ? 'Redo Signature' : 'Sign'}</span>
+                          </button>
+                        )}
+
                         {/* Font selector for text/date fields */}
                         {(field.fieldType === 'text' || field.fieldType === 'date' || field.fieldType === 'name') && (
                           <div className="flex items-center gap-1 pl-1">

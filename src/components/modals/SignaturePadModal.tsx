@@ -12,6 +12,7 @@ interface SignaturePadModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectSignature: (dataUrl: string, label: string) => void;
+  title?: string;
 }
 
 export const AVAILABLE_FONTS = [
@@ -54,6 +55,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
   isOpen,
   onClose,
   onSelectSignature,
+  title,
 }) => {
   const [activeTab, setActiveTab]       = useState<'draw' | 'type' | 'upload' | 'saved'>('draw');
   const [typedText, setTypedText]       = useState('Your Name');
@@ -118,6 +120,8 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
       setSigBottomY(null);
       setCombinedPreviewUrl(null);
       setStylusDetected(false);
+      drawnPointsRef.current = null;
+      sigPadRef.current?.clear();
     } else {
       drawnPointsRef.current = null;
       setDrawnPreview(null);
@@ -678,7 +682,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
               <PenTool style={{ height: 16, width: 16, color: 'var(--moss)' }} />
             </div>
             <h3 className="font-display font-bold text-base sm:text-lg" style={{ color: 'var(--fg)' }}>
-              Create Signature
+              {title || 'Create Signature'}
             </h3>
           </div>
           <button

@@ -1802,11 +1802,39 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
                         {/* Field Content */}
                         {field.fieldType === 'signature' ? (
                           currentVal && currentVal.startsWith('data:image') ? (
-                            <img
-                              src={currentVal}
-                              alt="Signature"
-                              className="h-full w-full object-contain pointer-events-none select-none"
-                            />
+                            mine ? (
+                              <div
+                                onClick={(e) => {
+                                  if (!hasDraggedRef.current && !dragJustEndedRef.current) {
+                                    e.stopPropagation();
+                                    handleOpenSigModal(field.id);
+                                  }
+                                }}
+                                className="relative w-full h-full flex items-center justify-center group/sig cursor-pointer select-none overflow-hidden"
+                                title="Click to edit or redo signature"
+                              >
+                                <img
+                                  src={currentVal}
+                                  alt="Signature"
+                                  className="h-full w-full object-contain pointer-events-none select-none"
+                                />
+                                <div className="absolute inset-0 bg-black/0 hover:bg-black/15 transition-colors flex items-center justify-center opacity-0 group-hover/sig:opacity-100 rounded-lg">
+                                  <span
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold text-white shadow-md transition-transform transform group-hover/sig:scale-100 scale-95"
+                                    style={{ background: 'var(--moss)' }}
+                                  >
+                                    <PenTool className="h-2.5 w-2.5" />
+                                    <span>Redo Signature</span>
+                                  </span>
+                                </div>
+                              </div>
+                            ) : (
+                              <img
+                                src={currentVal}
+                                alt="Signature"
+                                className="h-full w-full object-contain pointer-events-none select-none"
+                              />
+                            )
                           ) : mine ? (
                             <button
                               onClick={(e) => {
@@ -2137,6 +2165,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
         onSelectSignature={(dataUrl) => {
           handleSelectSignature(dataUrl, activeSigFieldId || undefined);
         }}
+        title={activeSigFieldId && (fieldValues[activeSigFieldId]?.value || fields.find((f) => f.id === activeSigFieldId)?.value) ? 'Edit / Redo Signature' : 'Create Signature'}
       />
     </div>
   );

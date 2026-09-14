@@ -1017,6 +1017,7 @@ export function App() {
         isOpen={isSigModalOpen}
         onClose={closeSignatureModal}
         onSelectSignature={handleSelectSignatureFromModal}
+        title={targetFieldId && fields.find((f) => f.id === targetFieldId)?.value ? 'Edit / Redo Signature' : 'Create Signature'}
       />
 
       {selectedDoc && (
