@@ -380,56 +380,115 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
     };
   }, [pdfDoc, currentPage, scale, canvasMountedVersion, isReopening, submittedResult]);
 
+  // Mobile double-tap to zoom in / reset to fit
+  const lastTapRef = useRef<{ time: number; x: number; y: number }>({ time: 0, x: 0, y: 0 });
+
+  const handleDocumentTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (isPinchingRef.current || draggingFieldId || isResizing) return;
+    if (e.changedTouches.length !== 1) return;
+
+    const touch = e.changedTouches[0];
+    const now = Date.now();
+    const prev = lastTapRef.current;
+    const timeDiff = now - prev.time;
+    const dist = Math.hypot(touch.clientX - prev.x, touch.clientY - prev.y);
+
+    if (timeDiff > 50 && timeDiff < 320 && dist < 35) {
+      // Double-tap detected!
+      lastTapRef.current = { time: 0, x: 0, y: 0 };
+      if (pdfDoc) {
+        pdfDoc.getPage(currentPage).then((page: any) => {
+          const unscaled = page.getViewport({ scale: 1.0 });
+          const fitScale = getContainerFitScale(unscaled.width, unscaled.height);
+
+          if (scale > fitScale * 1.25) {
+            // Already zoomed in -> reset to fit screen
+            userZoomedRef.current = false;
+            setScale(fitScale);
+          } else {
+            // Zoom in focused on tap point (~1.75x)
+            userZoomedRef.current = true;
+            const newScale = Math.min(2.5, Math.round(fitScale * 1.75 * 100) / 100);
+            setScale(newScale);
+
+            if (scrollContainerRef.current) {
+              const scrollEl = scrollContainerRef.current;
+              const scrollRect = scrollEl.getBoundingClientRect();
+              const clickRelX = touch.clientX - scrollRect.left;
+              const clickRelY = touch.clientY - scrollRect.top;
+              const factor = newScale / scale;
+              const newLeft = (scrollEl.scrollLeft + clickRelX) * factor - clickRelX;
+              const newTop = (scrollEl.scrollTop + clickRelY) * factor - clickRelY;
+
+              requestAnimationFrame(() => {
+                scrollEl.scrollLeft = Math.max(0, newLeft);
+                scrollEl.scrollTop = Math.max(0, newTop);
+              });
+            }
+          }
+        });
+      }
+    } else {
+      lastTapRef.current = { time: now, x: touch.clientX, y: touch.clientY };
+    }
+  }, [pdfDoc, currentPage, scale, draggingFieldId, isResizing, getContainerFitScale]);
+
   // Mobile pinch-to-zoom touch gesture handling (GPU-accelerated 60fps transform)
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
 
+    const startPinch = (t1: Touch, t2: Touch) => {
+      if (!containerRef.current || !scrollContainerRef.current) return;
+      const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+      if (dist < 10) return;
+
+      const midX = (t1.clientX + t2.clientX) / 2;
+      const midY = (t1.clientY + t2.clientY) / 2;
+      const rect = containerRef.current.getBoundingClientRect();
+      const originX = midX - rect.left;
+      const originY = midY - rect.top;
+
+      isPinchingRef.current = true;
+      pinchDataRef.current = {
+        initialDist: dist,
+        initialScale: scale,
+        factor: 1,
+        midClientX: midX,
+        midClientY: midY,
+        originX,
+        originY,
+        scrollLeft: el.scrollLeft,
+        scrollTop: el.scrollTop,
+      };
+
+      containerRef.current.style.transformOrigin = `${originX}px ${originY}px`;
+      containerRef.current.style.transition = 'none';
+      containerRef.current.style.willChange = 'transform';
+    };
+
     const onTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 2 && containerRef.current) {
-        const t1 = e.touches[0];
-        const t2 = e.touches[1];
-        const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-        if (dist < 10) return;
-
-        const midX = (t1.clientX + t2.clientX) / 2;
-        const midY = (t1.clientY + t2.clientY) / 2;
-        const rect = containerRef.current.getBoundingClientRect();
-        const originX = midX - rect.left;
-        const originY = midY - rect.top;
-
-        isPinchingRef.current = true;
-        pinchDataRef.current = {
-          initialDist: dist,
-          initialScale: scale,
-          factor: 1,
-          midClientX: midX,
-          midClientY: midY,
-          originX,
-          originY,
-          scrollLeft: el.scrollLeft,
-          scrollTop: el.scrollTop,
-        };
-
-        // Prepare container for GPU-accelerated smooth transform
-        containerRef.current.style.transformOrigin = `${originX}px ${originY}px`;
-        containerRef.current.style.transition = 'none';
-        containerRef.current.style.willChange = 'transform';
+      if (e.touches.length === 2) {
+        startPinch(e.touches[0], e.touches[1]);
       }
     };
 
     const onTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 2 && isPinchingRef.current && pinchDataRef.current) {
-        if (e.cancelable) e.preventDefault();
-        const t1 = e.touches[0];
-        const t2 = e.touches[1];
-        const currentDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-        const factor = currentDist / pinchDataRef.current.initialDist;
-        pinchDataRef.current.factor = factor;
+      if (e.touches.length === 2) {
+        if (!isPinchingRef.current || !pinchDataRef.current) {
+          startPinch(e.touches[0], e.touches[1]);
+        }
+        if (isPinchingRef.current && pinchDataRef.current) {
+          if (e.cancelable) e.preventDefault();
+          const t1 = e.touches[0];
+          const t2 = e.touches[1];
+          const currentDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+          const factor = currentDist / pinchDataRef.current.initialDist;
+          pinchDataRef.current.factor = factor;
 
-        // Directly apply GPU transform - zero React re-renders, zero PDF.js canvas rebuilds during gesture!
-        if (containerRef.current) {
-          containerRef.current.style.transform = `scale(${factor})`;
+          if (containerRef.current) {
+            containerRef.current.style.transform = `scale(${factor})`;
+          }
         }
       }
     };
@@ -452,12 +511,10 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
         const targetScale = Math.min(3.0, Math.max(0.35, Math.round(data.initialScale * factor * 100) / 100));
         userZoomedRef.current = true;
 
-        // Reset CSS transform
         containerRef.current.style.transform = '';
         containerRef.current.style.transformOrigin = '';
         containerRef.current.style.willChange = 'auto';
 
-        // Adjust scroll position to maintain pinch center point
         const scrollRect = el.getBoundingClientRect();
         const relMidX = data.midClientX - scrollRect.left;
         const relMidY = data.midClientY - scrollRect.top;
@@ -1492,6 +1549,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
             <div
               ref={scrollContainerRef}
               onClick={() => setSelectedFieldId(null)}
+              onTouchEnd={handleDocumentTouchEnd}
               className="flex-1 overflow-auto p-2 sm:p-8 select-none"
               style={{
                 background: 'var(--bg)',
@@ -1499,6 +1557,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
                 scrollbarColor: 'var(--moss) rgba(0,0,0,0.06)',
                 touchAction: 'pan-x pan-y',
                 overscrollBehavior: 'contain',
+                WebkitOverflowScrolling: 'touch',
               }}
             >
               <div className="min-w-full w-max min-h-full flex items-center justify-center m-auto pb-20 sm:pb-28">
@@ -2016,11 +2075,12 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
 
       {/* ── Mobile Floating Zoom Controls ── */}
       <div
-        className="fixed bottom-[4.75rem] right-3 z-40 sm:hidden flex items-center gap-1 px-2 py-1.5 rounded-full glass shadow-float border border-border"
+        className="fixed bottom-[4.75rem] right-3 z-40 sm:hidden flex items-center gap-1 p-1 rounded-full glass shadow-float border border-border"
         style={{
-          background: 'rgba(254, 254, 250, 0.92)',
+          background: 'rgba(254, 254, 250, 0.95)',
           backdropFilter: 'blur(16px)',
-          boxShadow: '0 8px 24px -4px rgba(44,44,36,0.18)',
+          boxShadow: '0 8px 24px -4px rgba(44,44,36,0.22), 0 0 0 1px rgba(93,112,82,0.12)',
+          touchAction: 'manipulation',
         }}
         aria-label="Mobile zoom controls"
       >
@@ -2031,9 +2091,9 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
             setScale((s) => Math.max(0.35, Math.round((s - 0.2) * 100) / 100));
           }}
           aria-label="Zoom out"
-          className="p-1.5 rounded-full hover:bg-[var(--moss-dim)] text-[var(--fg-muted)] active:scale-95 transition-transform cursor-pointer"
+          className="h-9 w-9 flex items-center justify-center rounded-full hover:bg-[var(--moss-dim)] active:bg-[var(--moss-dim)] text-[var(--fg-muted)] active:scale-90 transition-all cursor-pointer"
         >
-          <ZoomOut style={{ height: 16, width: 16 }} />
+          <ZoomOut style={{ height: 18, width: 18 }} />
         </button>
         <button
           type="button"
@@ -2048,7 +2108,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
               setScale(1.0);
             }
           }}
-          className="font-mono font-bold text-[11px] px-1.5 py-0.5 rounded-md hover:bg-[var(--moss-dim)] text-[var(--fg)] active:scale-95 transition-all cursor-pointer"
+          className="h-9 px-2.5 flex items-center justify-center font-mono font-bold text-xs rounded-full hover:bg-[var(--moss-dim)] active:bg-[var(--moss-dim)] text-[var(--fg)] active:scale-95 transition-all cursor-pointer"
           title="Reset zoom to fit screen"
         >
           {Math.round(scale * 100)}%
@@ -2060,9 +2120,9 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
             setScale((s) => Math.min(3.0, Math.round((s + 0.2) * 100) / 100));
           }}
           aria-label="Zoom in"
-          className="p-1.5 rounded-full hover:bg-[var(--moss-dim)] text-[var(--fg-muted)] active:scale-95 transition-transform cursor-pointer"
+          className="h-9 w-9 flex items-center justify-center rounded-full hover:bg-[var(--moss-dim)] active:bg-[var(--moss-dim)] text-[var(--fg-muted)] active:scale-90 transition-all cursor-pointer"
         >
-          <ZoomIn style={{ height: 16, width: 16 }} />
+          <ZoomIn style={{ height: 18, width: 18 }} />
         </button>
       </div>
 
