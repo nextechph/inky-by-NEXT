@@ -1170,7 +1170,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                     value={printedName}
                     onChange={(e) => setPrintedName(e.target.value.toUpperCase())}
                     className="w-full h-8.5 px-3 rounded-xl bg-white/90 border border-[var(--border-light)] focus:border-[var(--moss)] text-xs font-bold uppercase tracking-wider text-[var(--fg)] outline-none transition-colors placeholder:text-[var(--fg-muted)]/50 placeholder:font-normal placeholder:normal-case shadow-2xs"
-                    placeholder="Printed full name (e.g. MARK LURIAN)"
+                    placeholder="Enter printed full name..."
                     autoFocus
                   />
 
