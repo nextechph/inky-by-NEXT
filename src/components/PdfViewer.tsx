@@ -480,25 +480,38 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   };
 
   const isFieldLocked = (field: SignatureField) => {
-    // 1. Any field with a value signed by a recipient
-    if (field.value && (field.signerOrder || field.signerEmail || field.signerName)) {
-      return true;
+    // 1. Owner or unassigned fields are never locked — the user can always edit, move, or remove them
+    if (!field.signerOrder && !field.signerEmail && !field.signerId) {
+      return false;
     }
-    // 2. If the recipient assigned to this field has signed
+    if (field.signerOrder === 0) {
+      return false;
+    }
+
+    // 2. Check if an external recipient is assigned to this field
     const assignedRec = recipients.find(
       (r) =>
+        (field.signerId && r.id === field.signerId) ||
         (field.signerOrder && r.signingOrder === field.signerOrder) ||
-        (field.signerEmail && r.email.toLowerCase() === field.signerEmail.toLowerCase()) ||
-        (field.signerId && r.id === field.signerId)
+        (field.signerEmail && r.email && r.email.toLowerCase() === field.signerEmail.toLowerCase())
     );
-    if (assignedRec && assignedRec.status === 'signed') {
+
+    // Only lock if the remote recipient actually completed signing their assigned field
+    if (assignedRec && assignedRec.status === 'signed' && field.value) {
       return true;
     }
-    // 3. If document is marked completed, any field with a value is locked
-    const selectedDoc = useDocumentStore.getState().selectedDoc;
-    if (selectedDoc?.status === 'completed' && field.value) {
+
+    // If recipient is known and hasn't signed yet, do not lock
+    if (assignedRec && assignedRec.status !== 'signed') {
+      return false;
+    }
+
+    // 3. Fallback for legacy / cloud-hydrated fields without full recipient records:
+    // Only lock if assigned to an external signer order (>0) or external email, and has a value
+    if (field.value && ((field.signerOrder && field.signerOrder > 0) || field.signerEmail)) {
       return true;
     }
+
     return false;
   };
 
@@ -1008,6 +1021,13 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
               const hasValue   = Boolean(field.value);
               const locked     = isFieldLocked(field);
 
+              const assignedRec = recipients.find(
+                (r) =>
+                  (field.signerId && r.id === field.signerId) ||
+                  (field.signerOrder && r.signingOrder === field.signerOrder) ||
+                  (field.signerEmail && r.email && r.email.toLowerCase() === field.signerEmail.toLowerCase())
+              );
+
               let borderStyle = '2px dashed transparent';
               if (isSelected) {
                 borderStyle = locked ? '2px solid var(--moss)' : `2px solid ${fieldSignerColor}`;
@@ -1172,7 +1192,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                         <ShieldCheck style={{ height: 13, width: 13 }} />
                         <span>Locked Signature</span>
                         <span className="text-[10px] opacity-75 font-normal">
-                          · {field.signerName || 'Recipient'} ({field.signerEmail || `Signer ${field.signerOrder}`})
+                          · {field.signerName || assignedRec?.name || 'Recipient'} ({field.signerEmail || assignedRec?.email || (field.signerOrder ? `Signer ${field.signerOrder}` : 'External Signer')})
                         </span>
                         <Lock style={{ height: 11, width: 11, marginLeft: 2 }} />
                       </div>
