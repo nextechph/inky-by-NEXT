@@ -237,6 +237,28 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
     };
   }, [context?.document?.id]);
 
+  const getContainerFitScale = useCallback((unscaledWidth: number, unscaledHeight: number) => {
+    let availW = window.innerWidth - 20;
+    let availH = window.innerHeight - 200;
+
+    if (scrollContainerRef.current) {
+      const rect = scrollContainerRef.current.getBoundingClientRect();
+      if (rect.width > 50) availW = rect.width - (window.innerWidth < 640 ? 16 : 32);
+      if (rect.height > 50) availH = rect.height - (window.innerWidth < 640 ? 16 : 32);
+    }
+
+    const scaleW = availW / unscaledWidth;
+    const scaleH = availH / unscaledHeight;
+
+    if (window.innerWidth < 640) {
+      // Fit both width and height so it fits any phone screen perfectly
+      const fit = Math.min(scaleW, scaleH);
+      return Math.round(Math.min(1.15, Math.max(0.25, fit)) * 100) / 100;
+    }
+
+    return Math.round(Math.min(1.4, Math.max(0.5, scaleW)) * 100) / 100;
+  }, []);
+
   // Load PDF Document when pdfBlob is available, with cloud & local fallbacks
   useEffect(() => {
     let isMounted = true;
@@ -272,6 +294,14 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
         if (isMounted) {
           setPdfDoc(doc);
           setNumPages(doc.numPages);
+          try {
+            const firstPage = await doc.getPage(1);
+            const unscaledViewport = firstPage.getViewport({ scale: 1.0 });
+            const fitScale = getContainerFitScale(unscaledViewport.width, unscaledViewport.height);
+            setScale(fitScale);
+          } catch (scaleErr) {
+            console.warn('Error calculating mobile fit scale in signer portal:', scaleErr);
+          }
           setCanvasMountedVersion((v) => v + 1);
         }
       } catch (err) {
@@ -283,7 +313,21 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
       loadPdf();
     }
     return () => { isMounted = false; };
-  }, [context?.pdfBlob, context?.document?.id, context?.document?.filePath]);
+  }, [context?.pdfBlob, context?.document?.id, context?.document?.filePath, getContainerFitScale]);
+
+  useEffect(() => {
+    if (!scrollContainerRef.current || !pdfDoc) return;
+    const observer = new ResizeObserver(() => {
+      if (window.innerWidth >= 640) return;
+      pdfDoc.getPage(currentPage).then((page: any) => {
+        const unscaledViewport = page.getViewport({ scale: 1.0 });
+        const fitScale = getContainerFitScale(unscaledViewport.width, unscaledViewport.height);
+        setScale(fitScale);
+      }).catch(() => {});
+    });
+    observer.observe(scrollContainerRef.current);
+    return () => observer.disconnect();
+  }, [pdfDoc, currentPage, getContainerFitScale]);
 
   // Render current PDF page - re-runs immediately when canvas mounts, page changes, scale changes, or when reopening/editing
   useEffect(() => {
@@ -440,6 +484,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
     };
     const handleTouchMove = (e: TouchEvent) => {
       if (e.touches.length === 1) {
+        if (e.cancelable) e.preventDefault();
         if (isResizing) {
           onResizeMove(e.touches[0].clientX, e.touches[0].clientY);
         } else if (draggingFieldId) {
@@ -974,7 +1019,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-bold transition-all duration-200 whitespace-nowrap hover:scale-105 active:scale-95 cursor-pointer shadow-xs"
+      className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-full text-[11px] sm:text-xs font-bold transition-all duration-200 whitespace-nowrap hover:scale-105 active:scale-95 cursor-pointer shadow-xs shrink-0"
       style={{
         background: 'rgba(93,112,82,0.10)',
         color: 'var(--moss)',
@@ -1093,29 +1138,29 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
   const currentPageFields = fields.filter((f) => f.pageNumber === currentPage);
 
   return (
-    <div className="min-h-screen flex flex-col bg-[var(--bg)] text-[var(--fg)] font-sans">
+    <div className="h-[100dvh] max-h-[100dvh] min-h-screen flex flex-col bg-[var(--bg)] text-[var(--fg)] font-sans overflow-hidden">
       {/* ── Top Minimal Nav Bar (Back to Inbox / App + Document Info) ────────── */}
-      <div className="max-w-6xl mx-auto w-full px-3 sm:px-6 pt-3 pb-2 flex items-center justify-between gap-2 shrink-0">
+      <div className="max-w-6xl mx-auto w-full px-2.5 sm:px-6 pt-2.5 sm:pt-3 pb-2 flex items-center justify-between gap-2 shrink-0">
         <button
           onClick={() => {
             if (onBack) onBack();
             else window.location.href = '/';
           }}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--bg-stone)] text-[var(--fg-muted)] hover:text-[var(--fg)] transition-all cursor-pointer shadow-xs"
+          className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 sm:px-3 py-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--bg-stone)] text-[var(--fg-muted)] hover:text-[var(--fg)] transition-all cursor-pointer shadow-xs shrink-0"
         >
           <ChevronLeft style={{ height: 14, width: 14 }} />
           <span>Back</span>
         </button>
 
-        <div className="text-right flex items-center gap-2 min-w-0">
-          <span className="text-xs font-bold text-[var(--fg)] truncate max-w-xs sm:max-w-md">
+        <div className="text-right flex items-center gap-1.5 sm:gap-2 min-w-0">
+          <span className="text-xs font-bold text-[var(--fg)] truncate max-w-[150px] xs:max-w-xs sm:max-w-md">
             {doc.title}
           </span>
           <span
-            className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white shrink-0 hidden sm:inline"
+            className="px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold text-white shrink-0"
             style={{ background: getSignerColor(recipient.signingOrder) }}
           >
-            Signer #{recipient.signingOrder}: {recipient.name}
+            <span className="hidden sm:inline">Signer #{recipient.signingOrder}: </span>{recipient.name}
           </span>
         </div>
       </div>
@@ -1141,17 +1186,16 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
       )}
 
       {/* ── Main Organic Card (Matches PdfViewer.tsx exactly) ── */}
-      <div className="max-w-6xl mx-auto w-full px-3 sm:px-6 pb-6 flex-1 flex flex-col min-h-0">
+      <div className="max-w-6xl mx-auto w-full px-1.5 sm:px-6 pb-2 sm:pb-6 flex-1 flex flex-col min-h-0 overflow-hidden">
         <div
-          className="card-organic rounded-[2rem] overflow-hidden flex flex-col flex-1 relative"
+          className="card-organic rounded-[1.5rem] sm:rounded-[2rem] overflow-hidden flex flex-col flex-1 relative h-full min-h-0"
           style={{
-            minHeight: 'calc(100vh - 8rem)',
             border: '1px solid var(--border)',
           }}
         >
           {/* ── Sticky Top Bar (Identical styling to PdfViewer.tsx) ── */}
           <div
-            className="glass px-3 sm:px-4 flex items-center justify-between gap-2 z-30 sticky top-0 shrink-0 overflow-visible"
+            className="glass px-2.5 sm:px-4 flex items-center justify-between gap-1.5 sm:gap-2 z-30 sticky top-0 shrink-0 overflow-visible"
             style={{
               height: 52,
               minHeight: 52,
@@ -1159,9 +1203,9 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
             }}
           >
             {/* Field count / status badge */}
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0">
               <div
-                className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full text-xs font-semibold"
                 style={{
                   background: 'rgba(93,112,82,0.08)',
                   color: 'var(--moss)',
@@ -1169,24 +1213,27 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
                 }}
               >
                 <FileSignature style={{ height: 13, width: 13 }} />
-                <span>
+                <span className="hidden xs:inline">
                   {filledCount} / {myRequiredFields.length || myFields.length || 1} {fields.length === 1 ? 'field' : 'fields'}
+                </span>
+                <span className="xs:hidden">
+                  {filledCount}/{myRequiredFields.length || myFields.length || 1}
                 </span>
               </div>
             </div>
 
             {/* Right Controls */}
-            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               {/* Page navigation */}
               <div
-                className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-semibold"
+                className="flex items-center gap-0.5 sm:gap-1 px-2 sm:px-3 py-1.5 rounded-full text-xs font-semibold"
                 style={{ background: 'rgba(255,255,255,0.60)', border: '1px solid var(--border)', color: 'var(--fg-muted)' }}
               >
                 <button
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                   disabled={currentPage <= 1}
                   aria-label="Previous page"
-                  className="hover:text-[var(--moss)] disabled:opacity-30 cursor-pointer"
+                  className="hover:text-[var(--moss)] disabled:opacity-30 cursor-pointer p-0.5"
                 >
                   <ChevronLeft style={{ height: 16, width: 16 }} />
                 </button>
@@ -1196,7 +1243,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
                   onClick={() => setCurrentPage((p) => Math.min(numPages, p + 1))}
                   disabled={currentPage >= numPages}
                   aria-label="Next page"
-                  className="hover:text-[var(--moss)] disabled:opacity-30 cursor-pointer"
+                  className="hover:text-[var(--moss)] disabled:opacity-30 cursor-pointer p-0.5"
                 >
                   <ChevronRight style={{ height: 16, width: 16 }} />
                 </button>
@@ -1208,7 +1255,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
                 style={{ background: 'rgba(255,255,255,0.60)', border: '1px solid var(--border)' }}
               >
                 <button
-                  onClick={() => setScale((s) => Math.max(0.6, s - 0.15))}
+                  onClick={() => setScale((s) => Math.max(0.35, s - 0.15))}
                   style={{ color: 'var(--fg-muted)' }}
                   aria-label="Zoom out"
                   className="hover:text-[var(--moss)] cursor-pointer"
@@ -1216,9 +1263,18 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
                   <ZoomOut style={{ height: 14, width: 14 }} />
                 </button>
                 <button
-                  onClick={() => setScale(1.0)}
-                  title="Click to reset to 100%"
-                  className="font-mono font-bold text-[11px] w-10 text-center hover:text-[var(--moss)] transition-colors cursor-pointer"
+                  onClick={() => {
+                    if (pdfDoc) {
+                      pdfDoc.getPage(currentPage).then((page: any) => {
+                        const unscaled = page.getViewport({ scale: 1.0 });
+                        setScale(getContainerFitScale(unscaled.width, unscaled.height));
+                      });
+                    } else {
+                      setScale(1.0);
+                    }
+                  }}
+                  title="Click to fit screen"
+                  className="font-mono font-bold text-[11px] w-12 text-center hover:text-[var(--moss)] transition-colors cursor-pointer"
                   style={{ color: 'var(--fg)' }}
                 >
                   {Math.round(scale * 100)}%
@@ -1239,7 +1295,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
                   type="button"
                   onClick={handleDownloadSignedPdf}
                   disabled={isExporting}
-                  className="btn-outline btn-sm flex items-center gap-1.5 cursor-pointer"
+                  className="btn-outline btn-sm !px-2 sm:!px-3 flex items-center gap-1.5 cursor-pointer"
                   title="Download signed PDF with signatures and fields"
                 >
                   {isExporting ? (
@@ -1256,7 +1312,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
                 type="button"
                 onClick={handleFinishSubmit}
                 disabled={!isAllFilled || isSubmitting}
-                className="btn-primary btn-sm"
+                className="btn-primary btn-sm !px-2.5 sm:!px-4"
                 title={!isAllFilled ? 'Please complete all required fields before submitting' : 'Submit signed document'}
               >
                 {isSubmitting ? (
@@ -1264,14 +1320,15 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
                 ) : (
                   <Send style={{ height: 13, width: 13 }} />
                 )}
-                <span>{isReopening || recipient.status === 'signed' ? 'Update & Resubmit' : 'Finish & Submit'}</span>
+                <span className="hidden xs:inline">{isReopening || recipient.status === 'signed' ? 'Update & Resubmit' : 'Finish & Submit'}</span>
+                <span className="xs:hidden">{isReopening || recipient.status === 'signed' ? 'Resubmit' : 'Submit'}</span>
               </button>
             </div>
           </div>
 
-          {/* ── Content: Sidebar + Canvas ── */}
-          <div className="flex flex-1 overflow-hidden">
-            {/* Page thumbnail sidebar */}
+          {/* ── Main Canvas Viewport Area ── */}
+          <div className="flex flex-1 overflow-hidden w-full max-w-full">
+            {/* Page Thumbnails Sidebar */}
             {numPages > 1 && (
               <div
                 className="w-16 hidden sm:flex flex-col gap-2 p-2 overflow-y-auto shrink-0"
@@ -1302,26 +1359,28 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
             <div
               ref={scrollContainerRef}
               onClick={() => setSelectedFieldId(null)}
-              className="flex-1 overflow-auto p-4 sm:p-8 select-none"
+              className="flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-8 select-none"
               style={{
                 background: 'var(--bg)',
                 scrollbarWidth: 'thin',
                 scrollbarColor: 'var(--moss) rgba(0,0,0,0.06)',
+                touchAction: 'pan-y',
+                overscrollBehavior: 'none',
               }}
             >
-              <div className="min-w-full min-h-full w-fit flex items-center justify-center m-auto pb-28">
+              <div className="w-full min-h-full flex items-center justify-center m-auto pb-14 sm:pb-28 overflow-x-hidden">
                 <div
                   ref={containerRef}
                   onClick={handleCanvasClick}
-                  className="relative block shrink-0 m-auto cursor-crosshair bg-white rounded-sm"
+                  className="relative block shrink-0 m-auto cursor-crosshair bg-white rounded-sm max-w-full"
                   style={{
                     boxShadow: '0 8px 48px rgba(44,44,36,0.12)',
-                    minWidth: canvasRef.current?.width ? `${canvasRef.current.width}px` : '320px',
+                    minWidth: typeof window !== 'undefined' && window.innerWidth < 640 ? '100%' : (canvasRef.current?.width ? `${canvasRef.current.width}px` : '320px'),
                     minHeight: canvasRef.current?.height ? `${canvasRef.current.height}px` : '450px',
                   }}
                   title="Click anywhere to place signature"
                 >
-                  <canvas ref={setCanvasRef} className="block pointer-events-auto" />
+                  <canvas ref={setCanvasRef} className="block pointer-events-auto max-w-full h-auto" />
 
                   {/* Fields Layer */}
                   {currentPageFields.map((field) => {
@@ -1524,16 +1583,20 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
                                 startResize(field.id, e.touches[0].clientX, e.touches[0].clientY, e);
                               }
                             }}
-                            className="absolute -bottom-2.5 -right-2.5 w-5 h-5 rounded-full flex items-center justify-center cursor-se-resize z-40 transition-transform hover:scale-125 shadow-md"
-                            style={{
-                              background: 'var(--moss)',
-                              border: '2px solid #ffffff',
-                              boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
-                            }}
+                            className="absolute -bottom-3.5 -right-3.5 w-7 h-7 flex items-center justify-center cursor-se-resize z-40 touch-none"
                             title="Drag to resize signature"
                             aria-label="Resize signature"
                           >
-                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                            <div
+                              className="w-4 h-4 rounded-full flex items-center justify-center shadow-md transition-transform hover:scale-125"
+                              style={{
+                                background: 'var(--moss)',
+                                border: '2px solid #ffffff',
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+                              }}
+                            >
+                              <div className="w-1 h-1 rounded-full bg-white" />
+                            </div>
                           </div>
                         )}
 
@@ -1675,7 +1738,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
 
       {/* ── Floating Action Bar (EXACTLY like Picture 1 / PdfViewer.tsx!) ── */}
       <div
-        className="fixed bottom-6 inset-x-0 mx-auto w-fit z-40 flex items-center justify-center gap-1.5 sm:gap-2 px-3.5 py-2 rounded-full glass select-none max-w-[calc(100vw-2rem)] overflow-visible shadow-float transition-all duration-300"
+        className="fixed bottom-[max(1rem,calc(env(safe-area-inset-bottom,0px)+0.5rem))] inset-x-0 mx-auto w-fit z-40 flex items-center justify-center gap-1 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-full glass select-none max-w-[calc(100vw-1.5rem)] overflow-x-auto no-scrollbar shadow-float transition-all duration-300"
         style={{
           left: 0,
           right: 0,
@@ -1701,7 +1764,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
               handleStartAddSignature();
             }
           },
-          '+ Signature'
+          '+ Sig'
         )}
 
         {/* Stamp My Sig Dropdown Menu */}
@@ -1712,7 +1775,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
               setSavedSignatures(getSavedSignatures());
               setIsSigDropdownOpen((prev) => !prev);
             }}
-            className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-bold transition-all duration-200 whitespace-nowrap hover:scale-105 active:scale-95 cursor-pointer shadow-xs"
+            className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-full text-[11px] sm:text-xs font-bold transition-all duration-200 whitespace-nowrap hover:scale-105 active:scale-95 cursor-pointer shadow-xs shrink-0"
             style={{
               background: isSigDropdownOpen ? 'var(--moss)' : 'rgba(93,112,82,0.10)',
               color: isSigDropdownOpen ? '#F3F4F1' : 'var(--moss)',

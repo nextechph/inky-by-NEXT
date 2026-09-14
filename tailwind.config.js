@@ -8,6 +8,7 @@ export default {
   theme: {
     extend: {
       screens: {
+        'xs':            '480px',
         'fold-cover':    { 'max': '450px' },
         'fold-unfolded': { 'min': '600px' },
       },

@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import {
   PenTool,
@@ -125,7 +125,11 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       setIsPanning(false);
     };
     window.addEventListener('mouseup', handleGlobalMouseUp);
-    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+    window.addEventListener('touchend', handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+      window.removeEventListener('touchend', handleGlobalMouseUp);
+    };
   }, []);
 
   useEffect(() => {
@@ -145,17 +149,64 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     };
   }, []);
 
+  const getContainerFitScale = useCallback((unscaledWidth: number, unscaledHeight: number) => {
+    let availW = window.innerWidth - 20;
+    let availH = window.innerHeight - 200;
+
+    if (scrollContainerRef.current) {
+      const rect = scrollContainerRef.current.getBoundingClientRect();
+      if (rect.width > 50) availW = rect.width - (window.innerWidth < 640 ? 16 : 32);
+      if (rect.height > 50) availH = rect.height - (window.innerWidth < 640 ? 16 : 32);
+    }
+
+    const scaleW = availW / unscaledWidth;
+    const scaleH = availH / unscaledHeight;
+
+    if (window.innerWidth < 640) {
+      // Fit both width and height so it fits any phone screen perfectly
+      const fit = Math.min(scaleW, scaleH);
+      return Math.round(Math.min(1.15, Math.max(0.25, fit)) * 100) / 100;
+    }
+
+    return Math.round(Math.min(1.4, Math.max(0.5, scaleW)) * 100) / 100;
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
     const loadPdf = async () => {
       try {
         const doc = await pdfjsLib.getDocument(pdfUrl).promise;
-        if (isMounted) { setPdfDoc(doc); setNumPages(doc.numPages); }
+        if (isMounted) {
+          setPdfDoc(doc);
+          setNumPages(doc.numPages);
+          try {
+            const firstPage = await doc.getPage(1);
+            const unscaledViewport = firstPage.getViewport({ scale: 1.0 });
+            const fitScale = getContainerFitScale(unscaledViewport.width, unscaledViewport.height);
+            setScale(fitScale);
+          } catch (scaleErr) {
+            console.warn('Error calculating container fit scale:', scaleErr);
+          }
+        }
       } catch (err) { console.error('Error loading PDF:', err); }
     };
     loadPdf();
     return () => { isMounted = false; };
-  }, [pdfUrl]);
+  }, [pdfUrl, getContainerFitScale]);
+
+  useEffect(() => {
+    if (!scrollContainerRef.current || !pdfDoc) return;
+    const observer = new ResizeObserver(() => {
+      if (window.innerWidth >= 640) return;
+      pdfDoc.getPage(currentPage).then((page: any) => {
+        const unscaledViewport = page.getViewport({ scale: 1.0 });
+        const fitScale = getContainerFitScale(unscaledViewport.width, unscaledViewport.height);
+        setScale(fitScale);
+      }).catch(() => {});
+    });
+    observer.observe(scrollContainerRef.current);
+    return () => observer.disconnect();
+  }, [pdfDoc, currentPage, getContainerFitScale]);
 
   useEffect(() => {
     if (!pdfDoc || !canvasRef.current) return;
@@ -293,6 +344,40 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     });
   };
 
+  const handleFieldTouchStart = (fieldId: string, e: React.TouchEvent) => {
+    e.stopPropagation();
+    setSelectedFieldId(fieldId);
+    const field = fields.find((f) => f.id === fieldId);
+    if (!field || isFieldLocked(field)) return;
+    if (e.touches.length !== 1) return;
+
+    setIsDragging(true);
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const touch = e.touches[0];
+    const clickX = touch.clientX - rect.left;
+    const clickY = touch.clientY - rect.top;
+    const fieldPixelX = (field.x / 100) * rect.width;
+    const fieldPixelY = (field.y / 100) * rect.height;
+    setDragOffset({
+      x: clickX - fieldPixelX,
+      y: clickY - fieldPixelY,
+    });
+  };
+
+  const handleFieldTouchMove = (fieldId: string, e: React.TouchEvent) => {
+    if (!isDragging || selectedFieldId !== fieldId || !containerRef.current) return;
+    if (e.touches.length !== 1) return;
+    if (e.cancelable) e.preventDefault();
+    const touch = e.touches[0];
+    const rect = containerRef.current.getBoundingClientRect();
+    const mouseX = touch.clientX - rect.left;
+    const mouseY = touch.clientY - rect.top;
+    const pctX = Math.max(0, Math.min(92, ((mouseX - dragOffset.x) / rect.width) * 100));
+    const pctY = Math.max(0, Math.min(95, ((mouseY - dragOffset.y) / rect.height) * 100));
+    setFields((prev) => prev.map((f) => (f.id === selectedFieldId ? { ...f, x: pctX, y: pctY } : f)));
+  };
+
   const handleResizeMouseDown = (fieldId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const field = fields.find((f) => f.id === fieldId);
@@ -306,6 +391,45 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       width: field.width,
       height: field.height,
     });
+  };
+
+  const handleResizeTouchStart = (fieldId: string, e: React.TouchEvent) => {
+    e.stopPropagation();
+    const field = fields.find((f) => f.id === fieldId);
+    if (!field || isFieldLocked(field)) return;
+    if (e.touches.length !== 1) return;
+
+    setSelectedFieldId(fieldId);
+    setIsResizing(true);
+    const touch = e.touches[0];
+    setResizeStart({
+      x: touch.clientX,
+      y: touch.clientY,
+      width: field.width,
+      height: field.height,
+    });
+  };
+
+  const handleResizeTouchMove = (fieldId: string, e: React.TouchEvent) => {
+    if (!isResizing || selectedFieldId !== fieldId || !containerRef.current) return;
+    if (e.touches.length !== 1) return;
+    if (e.cancelable) e.preventDefault();
+    const touch = e.touches[0];
+    const rect = containerRef.current.getBoundingClientRect();
+    const deltaX = ((touch.clientX - resizeStart.x) / rect.width) * 100;
+    const deltaY = ((touch.clientY - resizeStart.y) / rect.height) * 100;
+    const field = fields.find((f) => f.id === selectedFieldId);
+    if (!field) return;
+
+    const newWidth = Math.max(8, Math.min(85, resizeStart.width + deltaX));
+    const aspect = resizeStart.width / (resizeStart.height || 1);
+    const newHeight = field.fieldType === 'signature'
+      ? Math.max(3, Math.min(50, newWidth / aspect))
+      : Math.max(3, Math.min(50, resizeStart.height + deltaY));
+
+    setFields((prev) =>
+      prev.map((f) => (f.id === selectedFieldId ? { ...f, width: newWidth, height: newHeight } : f))
+    );
   };
 
   const handleScrollAreaMouseDown = (e: React.MouseEvent) => {
@@ -325,12 +449,15 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (isPanning && scrollContainerRef.current) {
-      const dx = e.clientX - panStartRef.current.x;
+      const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+      const dx = isMobile ? 0 : (e.clientX - panStartRef.current.x);
       const dy = e.clientY - panStartRef.current.y;
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
         hasPannedRef.current = true;
       }
-      scrollContainerRef.current.scrollLeft = panStartRef.current.scrollLeft - dx;
+      if (!isMobile) {
+        scrollContainerRef.current.scrollLeft = panStartRef.current.scrollLeft - dx;
+      }
       scrollContainerRef.current.scrollTop  = panStartRef.current.scrollTop  - dy;
       return;
     }
@@ -433,7 +560,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   ) => (
     <button
       onClick={onClick}
-      className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-bold transition-all duration-200 whitespace-nowrap hover:scale-105 active:scale-95 cursor-pointer shadow-xs"
+      className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-full text-[11px] sm:text-xs font-bold transition-all duration-200 whitespace-nowrap hover:scale-105 active:scale-95 cursor-pointer shadow-xs shrink-0"
       style={{
         background: 'rgba(93,112,82,0.10)',
         color: 'var(--moss)',
@@ -464,12 +591,12 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   return (
     <>
       <div
-        className="card-organic rounded-[2rem] overflow-hidden flex flex-col"
+        className="card-organic rounded-[1.5rem] sm:rounded-[2rem] overflow-hidden flex flex-col w-full max-w-full flex-1 min-h-0 h-full"
         style={{ minHeight: 0, flex: 1 }}
       >
       {/* ── Top Control Bar ─────────────────────────────── */}
       <div
-        className="glass px-3 sm:px-4 flex items-center justify-between gap-2 z-30 sticky top-0 shrink-0 overflow-visible"
+        className="glass px-2.5 sm:px-4 flex items-center justify-between gap-1.5 sm:gap-2 z-30 sticky top-0 shrink-0 overflow-visible"
         style={{
           height: 52,
           minHeight: 52,
@@ -477,9 +604,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         }}
       >
         {/* Document status / field count indicator */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           <div
-            className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold"
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full text-xs font-semibold"
             style={{
               background: 'rgba(93,112,82,0.08)',
               color: 'var(--moss)',
@@ -487,22 +614,23 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             }}
           >
             <FileSignature style={{ height: 13, width: 13 }} />
-            <span>{fields.length} {fields.length === 1 ? 'field' : 'fields'}</span>
+            <span className="hidden xs:inline">{fields.length} {fields.length === 1 ? 'field' : 'fields'}</span>
+            <span className="xs:hidden">{fields.length}</span>
           </div>
         </div>
 
         {/* Controls */}
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {/* Page nav */}
           <div
-            className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-semibold"
+            className="flex items-center gap-0.5 sm:gap-1 px-2 sm:px-3 py-1.5 rounded-full text-xs font-semibold"
             style={{ background: 'rgba(255,255,255,0.60)', border: '1px solid var(--border)', color: 'var(--fg-muted)' }}
           >
             <button
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage <= 1}
               aria-label="Previous page"
-              className="hover:text-[var(--moss)] disabled:opacity-30 cursor-pointer"
+              className="hover:text-[var(--moss)] disabled:opacity-30 cursor-pointer p-0.5"
             >
               <ChevronLeft style={{ height: 16, width: 16 }} />
             </button>
@@ -512,7 +640,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
               onClick={() => setCurrentPage((p) => Math.min(numPages, p + 1))}
               disabled={currentPage >= numPages}
               aria-label="Next page"
-              className="hover:text-[var(--moss)] disabled:opacity-30 cursor-pointer"
+              className="hover:text-[var(--moss)] disabled:opacity-30 cursor-pointer p-0.5"
             >
               <ChevronRight style={{ height: 16, width: 16 }} />
             </button>
@@ -524,7 +652,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             style={{ background: 'rgba(255,255,255,0.60)', border: '1px solid var(--border)' }}
           >
             <button
-              onClick={() => setScale((s) => Math.max(0.6, s - 0.15))}
+              onClick={() => setScale((s) => Math.max(0.35, s - 0.15))}
               style={{ color: 'var(--fg-muted)' }}
               aria-label="Zoom out"
               className="hover:text-[var(--moss)] cursor-pointer"
@@ -532,9 +660,18 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
               <ZoomOut style={{ height: 14, width: 14 }} />
             </button>
             <button
-              onClick={() => setScale(1.0)}
-              title="Click to reset to 100%"
-              className="font-mono font-bold text-[11px] w-10 text-center hover:text-[var(--moss)] transition-colors cursor-pointer"
+              onClick={() => {
+                if (pdfDoc) {
+                  pdfDoc.getPage(currentPage).then((page: any) => {
+                    const unscaled = page.getViewport({ scale: 1.0 });
+                    setScale(getContainerFitScale(unscaled.width, unscaled.height));
+                  });
+                } else {
+                  setScale(1.0);
+                }
+              }}
+              title="Click to fit screen"
+              className="font-mono font-bold text-[11px] w-12 text-center hover:text-[var(--moss)] transition-colors cursor-pointer"
               style={{ color: 'var(--fg)' }}
             >
               {Math.round(scale * 100)}%
@@ -550,7 +687,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           </div>
 
           {/* Send */}
-          <button onClick={onSendClick} className="btn-outline btn-sm">
+          <button onClick={onSendClick} className="btn-outline btn-sm !px-2.5 sm:!px-3.5">
             <Send style={{ height: 13, width: 13 }} />
             <span className="hidden md:inline">Send</span>
           </button>
@@ -559,19 +696,19 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           <button
             onClick={onSignAndExport}
             disabled={isSigningLoading || fields.length === 0}
-            className="btn-primary btn-sm"
+            className="btn-primary btn-sm !px-2.5 sm:!px-3.5"
           >
             {isSigningLoading
               ? <span className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-white border-t-transparent" />
               : <Download style={{ height: 13, width: 13 }} />
             }
-            <span>Export</span>
+            <span className="hidden xs:inline">Export</span>
           </button>
         </div>
       </div>
 
       {/* ── Content ──────────────────────────────────────── */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden w-full max-w-full">
 
         {/* Page thumbnail sidebar */}
         {numPages > 1 && (
@@ -603,14 +740,15 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         {/* PDF Canvas + Field Overlay */}
         <div
           ref={scrollContainerRef}
-          className={`flex-1 overflow-auto p-4 sm:p-8 select-none ${
+          className={`flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-8 select-none ${
             isPanning ? 'cursor-grabbing' : 'cursor-grab'
           }`}
           style={{
             background: 'var(--bg)',
             scrollbarWidth: 'thin',
             scrollbarColor: 'var(--moss) rgba(0,0,0,0.06)',
-            touchAction: 'pan-x pan-y',
+            touchAction: 'pan-y',
+            overscrollBehavior: 'none',
           }}
           onMouseDown={handleScrollAreaMouseDown}
           onMouseMove={handleMouseMove}
@@ -620,13 +758,13 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             setSelectedFieldId(null);
           }}
         >
-          <div className="min-w-full min-h-full w-fit flex items-center justify-center m-auto pb-28">
+          <div className="w-full min-h-full flex items-center justify-center m-auto pb-14 sm:pb-28 overflow-x-hidden">
             <div
               ref={containerRef}
-              className="relative block shrink-0 m-auto"
+              className="relative block shrink-0 m-auto max-w-full"
               style={{ boxShadow: '0 8px 48px rgba(44,44,36,0.12)' }}
             >
-              <canvas ref={canvasRef} className="block pointer-events-none" />
+              <canvas ref={canvasRef} className="block pointer-events-none max-w-full h-auto" />
 
             {/* Field Overlay */}
             {currentPageFields.map((field) => {
@@ -653,6 +791,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 onMouseDown={(e) => {
                   handleMouseDown(field.id, e);
                 }}
+                onTouchStart={(e) => handleFieldTouchStart(field.id, e)}
+                onTouchMove={(e) => handleFieldTouchMove(field.id, e)}
+                onTouchEnd={handleMouseUp}
                 onClick={(e) => {
                   e.stopPropagation();
                   setSelectedFieldId(field.id);
@@ -664,6 +805,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                   height:   `${field.height}%`,
                   position: 'absolute',
                   cursor:   locked ? 'default' : 'move',
+                  touchAction: locked ? 'auto' : 'none',
                   zIndex:   isSelected ? 20 : 10,
                   border:   borderStyle,
                   borderRadius: 10,
@@ -848,15 +990,22 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 {!locked && isSelected && (
                   <div
                     onMouseDown={(e) => handleResizeMouseDown(field.id, e)}
-                    className="absolute -bottom-2 -right-2 w-4 h-4 rounded-full flex items-center justify-center cursor-se-resize z-30 transition-transform hover:scale-125"
-                    style={{
-                      background: 'var(--moss)',
-                      boxShadow: '0 2px 6px rgba(0,0,0,0.30)',
-                      border: '2px solid #ffffff',
-                    }}
+                    onTouchStart={(e) => handleResizeTouchStart(field.id, e)}
+                    onTouchMove={(e) => handleResizeTouchMove(field.id, e)}
+                    onTouchEnd={handleMouseUp}
+                    className="absolute -bottom-3 -right-3 w-7 h-7 flex items-center justify-center cursor-se-resize z-30 touch-none"
                     title="Drag to resize"
                     aria-label="Resize handle"
-                  />
+                  >
+                    <span
+                      className="w-3.5 h-3.5 rounded-full block transition-transform hover:scale-125"
+                      style={{
+                        background: 'var(--moss)',
+                        boxShadow: '0 2px 6px rgba(0,0,0,0.30)',
+                        border: '2px solid #ffffff',
+                      }}
+                    />
+                  </div>
                 )}
               </div>
               );
@@ -869,7 +1018,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
     {/* ── Floating Action Bar (Follows user as they scroll) ─────── */}
     <div
-      className="fixed bottom-6 inset-x-0 mx-auto w-fit z-40 flex items-center justify-center gap-1.5 sm:gap-2 px-3.5 py-2 rounded-full glass select-none max-w-[calc(100vw-2rem)] overflow-visible shadow-float transition-all duration-300"
+      className="fixed bottom-[max(1rem,calc(env(safe-area-inset-bottom,0px)+0.5rem))] inset-x-0 mx-auto w-fit z-40 flex items-center justify-center gap-1 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-full glass select-none max-w-[calc(100vw-1.5rem)] overflow-x-auto no-scrollbar shadow-float transition-all duration-300"
       style={{
         left: 0,
         right: 0,
@@ -889,7 +1038,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         '+ Signature Field',
         <PenTool style={{ height: 13, width: 13 }} />,
         () => addField('signature'),
-        '+ Signature'
+        '+ Sig'
       )}
 
       {/* Stamp My Sig Dropdown Menu */}
@@ -899,7 +1048,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             setSavedSignatures(getSavedSignatures());
             setIsSigDropdownOpen((prev) => !prev);
           }}
-          className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-bold transition-all duration-200 whitespace-nowrap hover:scale-105 active:scale-95 cursor-pointer shadow-xs"
+          className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-full text-[11px] sm:text-xs font-bold transition-all duration-200 whitespace-nowrap hover:scale-105 active:scale-95 cursor-pointer shadow-xs shrink-0"
           style={{
             background: isSigDropdownOpen ? 'var(--moss)' : 'rgba(93,112,82,0.10)',
             color: isSigDropdownOpen ? '#F3F4F1' : 'var(--moss)',

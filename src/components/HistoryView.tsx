@@ -157,19 +157,19 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
             <div
               key={doc.id}
               onClick={() => onSelectDocument && onSelectDocument(doc)}
-              className="card-organic rounded-[2rem] px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all duration-300 group cursor-pointer hover:border-[var(--moss)] hover:shadow-md"
+              className="card-organic rounded-[1.75rem] sm:rounded-[2rem] p-4 sm:px-5 sm:py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 transition-all duration-300 group cursor-pointer hover:border-[var(--moss)] hover:shadow-md"
             >
               {/* Left: icon + metadata */}
-              <div className="flex items-center gap-4 min-w-0">
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
                 <div
-                  className="h-12 w-12 rounded-2xl flex items-center justify-center shrink-0 transition-all duration-300 group-hover:scale-105"
+                  className="h-11 w-11 sm:h-12 sm:w-12 rounded-2xl flex items-center justify-center shrink-0 transition-all duration-300 group-hover:scale-105"
                   style={{ background: 'var(--moss-dim)' }}
                 >
                   <FileCheck style={{ height: 22, width: 22, color: 'var(--moss)' }} />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h4 className="font-bold text-base truncate" style={{ color: 'var(--fg)' }}>
+                    <h4 className="font-bold text-sm sm:text-base truncate" style={{ color: 'var(--fg)' }}>
                       {doc.title}
                     </h4>
                     <span className="badge-moss flex items-center gap-1">
@@ -186,7 +186,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
               </div>
 
               {/* Right: Actions */}
-              <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+              <div className="flex items-center gap-1.5 sm:gap-2 self-end sm:self-center shrink-0 flex-wrap">
                 {/* Edit document button */}
                 {onSelectDocument && (
                   <button

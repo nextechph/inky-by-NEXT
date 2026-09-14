@@ -129,7 +129,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateHome }) => {
 
   return (
     <div
-      className="min-h-screen w-full flex flex-col justify-between p-4 sm:p-6 md:p-8 relative overflow-hidden"
+      className="min-h-screen w-full flex flex-col justify-between p-3 xs:p-4 sm:p-6 md:p-8 relative overflow-hidden safe-top safe-bottom"
       style={{
         background: 'radial-gradient(ellipse at top, #faf8f5 0%, #ede8e1 100%)',
         color: 'var(--fg)',
@@ -169,9 +169,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateHome }) => {
       )}
 
       {/* Main Content Area */}
-      <main className="w-full max-w-md mx-auto my-auto py-6 z-10 animate-slideUp flex flex-col items-center justify-center">
+      <main className="w-full max-w-md mx-auto my-auto py-4 sm:py-6 z-10 animate-slideUp flex flex-col items-center justify-center">
         <div
-          className="card-organic w-full p-7 sm:p-9"
+          className="card-organic w-full p-5 sm:p-8 md:p-9"
           style={{
             borderRadius: '2.5rem',
             background: 'rgba(255, 255, 255, 0.82)',

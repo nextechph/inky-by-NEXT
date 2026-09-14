@@ -424,35 +424,38 @@ export function App() {
 
       {/* ── Editor Tab ─────────────────────────────────────── */}
       {activeTab === 'editor' && selectedDoc && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between pb-2 border-b border-border">
+        <div className="flex flex-col h-full min-h-0 flex-1 space-y-1.5 sm:space-y-3">
+          <div className="flex items-center justify-between pb-1.5 border-b border-border gap-2 shrink-0">
             <button
               onClick={clearSelection}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 sm:px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-all shrink-0"
             >
               <ArrowLeft size={14} />
-              <span>Back to Documents</span>
+              <span className="hidden xs:inline">Back to Documents</span>
+              <span className="xs:hidden">Back</span>
             </button>
-            <div className="text-right">
-              <h2 className="text-sm font-bold text-foreground truncate max-w-xs sm:max-w-md">
+            <div className="text-right min-w-0">
+              <h2 className="text-xs sm:text-sm font-bold text-foreground truncate max-w-[200px] xs:max-w-xs sm:max-w-md">
                 {selectedDoc.title}
               </h2>
-              <span className="text-[11px] text-muted-foreground font-mono">
+              <span className="text-[10px] sm:text-[11px] text-muted-foreground font-mono">
                 {selectedDoc.pageCount} page{selectedDoc.pageCount !== 1 ? 's' : ''}
               </span>
             </div>
           </div>
 
-          <PdfViewer
-            documentId={selectedDoc.id}
-            pdfUrl={selectedDoc.filePath}
-            fields={fields}
-            setFields={setFields as any}
-            onOpenSignatureModal={handleOpenSigModal}
-            onSignAndExport={() => signAndExport()}
-            onSendClick={() => setIsMultiSignerOpen(true)}
-            isSigningLoading={isSigningLoading}
-          />
+          <div className="flex-1 min-h-0 flex flex-col">
+            <PdfViewer
+              documentId={selectedDoc.id}
+              pdfUrl={selectedDoc.filePath}
+              fields={fields}
+              setFields={setFields as any}
+              onOpenSignatureModal={handleOpenSigModal}
+              onSignAndExport={() => signAndExport()}
+              onSendClick={() => setIsMultiSignerOpen(true)}
+              isSigningLoading={isSigningLoading}
+            />
+          </div>
         </div>
       )}
 
@@ -604,10 +607,10 @@ export function App() {
             </div>
 
             {/* Sub-tab pills */}
-            <div className="flex items-center gap-1.5 p-1 rounded-full bg-muted/60 border border-border shrink-0 self-start sm:self-center">
+            <div className="flex items-center gap-1 p-1 rounded-full bg-muted/60 border border-border w-full sm:w-auto overflow-x-auto no-scrollbar shrink-0 self-start sm:self-center">
               <button
                 onClick={() => setInboxSubTab('to_sign')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-200"
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-200 whitespace-nowrap"
                 style={{
                   background: inboxSubTab === 'to_sign' ? 'var(--moss)' : 'transparent',
                   color: inboxSubTab === 'to_sign' ? '#FFFFFF' : 'var(--fg-muted)',
@@ -630,14 +633,15 @@ export function App() {
 
               <button
                 onClick={() => setInboxSubTab('signed_docs')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-200"
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-200 whitespace-nowrap"
                 style={{
                   background: inboxSubTab === 'signed_docs' ? 'var(--moss)' : 'transparent',
                   color: inboxSubTab === 'signed_docs' ? '#FFFFFF' : 'var(--fg-muted)',
                 }}
               >
                 <CheckCircle2 style={{ height: 13, width: 13 }} />
-                <span>Signed Documents</span>
+                <span className="hidden xs:inline">Signed Documents</span>
+                <span className="xs:hidden">Signed</span>
                 {unreadCount > 0 && (
                   <span
                     className="h-4 min-w-4 px-1 rounded-full text-[9px] font-bold flex items-center justify-center"
@@ -653,14 +657,15 @@ export function App() {
 
               <button
                 onClick={() => setInboxSubTab('links')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-200"
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-200 whitespace-nowrap"
                 style={{
                   background: inboxSubTab === 'links' ? 'var(--moss)' : 'transparent',
                   color: inboxSubTab === 'links' ? '#FFFFFF' : 'var(--fg-muted)',
                 }}
               >
                 <Share2 style={{ height: 13, width: 13 }} />
-                <span>Upload Links</span>
+                <span className="hidden xs:inline">Upload Links</span>
+                <span className="xs:hidden">Links</span>
               </button>
             </div>
           </div>
@@ -718,36 +723,36 @@ export function App() {
                   pendingRequests.map((req) => (
                     <div
                       key={req.id}
-                      className="card-organic rounded-[2rem] px-5 py-4 flex items-center justify-between gap-3 transition-all duration-200 hover:shadow-md"
+                      className="card-organic rounded-[2rem] px-4 sm:px-5 py-3.5 sm:py-4 flex flex-col xs:flex-row xs:items-center justify-between gap-3 transition-all duration-200 hover:shadow-md"
                       style={{
                         borderLeft: req.status === 'pending' ? '3px solid #C18C5D' : '3px solid var(--moss)',
                       }}
                     >
-                      <div className="flex items-center gap-4 min-w-0">
+                      <div className="flex items-center gap-3 sm:gap-4 min-w-0">
                         <div
-                          className="h-11 w-11 rounded-2xl flex items-center justify-center shrink-0"
+                          className="h-10 w-10 sm:h-11 sm:w-11 rounded-2xl flex items-center justify-center shrink-0"
                           style={{
                             background: req.status === 'pending' ? 'rgba(193,140,93,0.12)' : 'var(--moss-dim)',
                           }}
                         >
                           {req.status === 'pending' ? (
-                            <PenLine style={{ height: 20, width: 20, color: '#C18C5D' }} />
+                            <PenLine style={{ height: 18, width: 18, color: '#C18C5D' }} />
                           ) : (
-                            <CheckCircle2 style={{ height: 20, width: 20, color: 'var(--moss)' }} />
+                            <CheckCircle2 style={{ height: 18, width: 18, color: 'var(--moss)' }} />
                           )}
                         </div>
                         <div className="min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-sm truncate" style={{ color: 'var(--fg)' }}>
+                          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                            <span className="font-bold text-xs sm:text-sm truncate" style={{ color: 'var(--fg)' }}>
                               {req.documentTitle}
                             </span>
                             {req.status === 'pending' ? (
-                              <span className="badge-clay text-[10px]">Action Required</span>
+                              <span className="badge-clay text-[9px] sm:text-[10px]">Action Required</span>
                             ) : (
-                              <span className="badge-moss text-[10px]">Signed</span>
+                              <span className="badge-moss text-[9px] sm:text-[10px]">Signed</span>
                             )}
                           </div>
-                          <p className="text-[11px] mt-0.5" style={{ color: 'var(--fg-muted)' }}>
+                          <p className="text-[10px] sm:text-[11px] mt-0.5" style={{ color: 'var(--fg-muted)' }}>
                             From <strong style={{ color: 'var(--fg)' }}>{req.senderName || 'Document Owner'}</strong>
                             {req.senderEmail && ` · ${req.senderEmail}`}
                             {' · '}
@@ -756,7 +761,7 @@ export function App() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0 self-end xs:self-center">
                         <button
                           onClick={() => navigateTo(`/sign/${req.token}`)}
                           className="btn-primary btn-sm flex items-center gap-1.5"
@@ -772,12 +777,12 @@ export function App() {
                             e.stopPropagation();
                             setConfirmDeleteReq(req);
                           }}
-                          className="p-2 rounded-xl transition-all duration-200 hover:scale-110 cursor-pointer"
+                          className="p-1.5 sm:p-2 rounded-xl transition-all duration-200 hover:scale-110 cursor-pointer"
                           style={{ color: 'var(--fg-muted)' }}
                           aria-label="Delete signing request"
                           title="Delete from inbox"
                         >
-                          <Trash2 style={{ height: 16, width: 16 }} />
+                          <Trash2 style={{ height: 15, width: 15 }} />
                         </button>
                       </div>
                     </div>
@@ -843,30 +848,30 @@ export function App() {
                   notifications.map((notif) => (
                     <div
                       key={notif.id}
-                      className="card-organic rounded-[2rem] px-5 py-4 flex items-center justify-between gap-3 transition-all duration-200 hover:shadow-md"
+                      className="card-organic rounded-[2rem] px-4 sm:px-5 py-3.5 sm:py-4 flex flex-col xs:flex-row xs:items-center justify-between gap-3 transition-all duration-200 hover:shadow-md"
                       style={{
                         borderLeft: notif.read ? undefined : `3px solid ${notif.allComplete ? 'var(--moss)' : '#C18C5D'}`,
                         opacity: notif.read ? 0.78 : 1,
                       }}
                     >
-                      <div className="flex items-center gap-4 min-w-0">
+                      <div className="flex items-center gap-3 sm:gap-4 min-w-0">
                         <div
-                          className="h-11 w-11 rounded-2xl flex items-center justify-center shrink-0"
+                          className="h-10 w-10 sm:h-11 sm:w-11 rounded-2xl flex items-center justify-center shrink-0"
                           style={{ background: notif.allComplete ? 'var(--moss-dim)' : 'rgba(193,140,93,0.12)' }}
                         >
                           {notif.allComplete
-                            ? <CheckCircle2 style={{ height: 20, width: 20, color: 'var(--moss)' }} />
-                            : <PenLine style={{ height: 20, width: 20, color: '#C18C5D' }} />
+                            ? <CheckCircle2 style={{ height: 18, width: 18, color: 'var(--moss)' }} />
+                            : <PenLine style={{ height: 18, width: 18, color: '#C18C5D' }} />
                           }
                         </div>
                         <div className="min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-sm truncate" style={{ color: 'var(--fg)' }}>
+                          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                            <span className="font-bold text-xs sm:text-sm truncate" style={{ color: 'var(--fg)' }}>
                               {notif.docTitle}
                             </span>
                             {notif.allComplete
-                              ? <span className="badge-moss text-[10px]">Fully Signed</span>
-                              : <span className="badge-clay text-[10px]">Partially Signed</span>
+                              ? <span className="badge-moss text-[9px] sm:text-[10px]">Fully Signed</span>
+                              : <span className="badge-clay text-[9px] sm:text-[10px]">Partially Signed</span>
                             }
                             {!notif.read && (
                               <span
@@ -875,7 +880,7 @@ export function App() {
                               />
                             )}
                           </div>
-                          <p className="text-[11px] mt-0.5" style={{ color: 'var(--fg-muted)' }}>
+                          <p className="text-[10px] sm:text-[11px] mt-0.5" style={{ color: 'var(--fg-muted)' }}>
                             Signed by <strong style={{ color: 'var(--fg)' }}>{notif.signerName}</strong>
                             {' · '}
                             {notif.signerEmail}
@@ -884,7 +889,7 @@ export function App() {
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0 self-end xs:self-center">
                         <button
                           onClick={() => handleMarkNotifRead(notif.id, notif.documentId)}
                           className="btn-primary btn-sm flex items-center gap-1.5"
@@ -898,12 +903,12 @@ export function App() {
                             e.stopPropagation();
                             setConfirmDeleteNotif(notif);
                           }}
-                          className="p-2 rounded-xl transition-all duration-200 hover:scale-110 cursor-pointer"
+                          className="p-1.5 sm:p-2 rounded-xl transition-all duration-200 hover:scale-110 cursor-pointer"
                           style={{ color: 'var(--fg-muted)' }}
                           aria-label="Delete notification"
                           title="Delete notification"
                         >
-                          <Trash2 style={{ height: 16, width: 16 }} />
+                          <Trash2 style={{ height: 15, width: 15 }} />
                         </button>
                       </div>
                     </div>

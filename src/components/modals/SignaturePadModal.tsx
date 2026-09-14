@@ -469,33 +469,33 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 animate-fadeIn"
       style={{ background: 'rgba(44,44,36,0.50)', backdropFilter: 'blur(10px)' }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
-        className="card-organic animate-slideUp w-full sm:max-w-lg rounded-[2rem] sm:rounded-[2.5rem] overflow-hidden flex flex-col shadow-2xl"
+        className="card-organic animate-slideUp w-full sm:max-w-lg rounded-[1.75rem] sm:rounded-[2.5rem] overflow-hidden flex flex-col shadow-2xl"
         style={{
-          maxHeight: 'min(92vh, 760px)',
+          maxHeight: 'min(94dvh, 760px)',
           minHeight: 0,
         }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div
-          className="flex items-center justify-between px-5 sm:px-6 py-3.5 sm:py-4 shrink-0"
+          className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 shrink-0"
           style={{ borderBottom: '1px solid var(--border-light)' }}
         >
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2 sm:gap-2.5">
             <div
-              className="h-9 w-9 rounded-2xl flex items-center justify-center"
+              className="h-8 sm:h-9 w-8 sm:w-9 rounded-2xl flex items-center justify-center"
               style={{ background: 'var(--moss-dim)' }}
             >
               <PenTool style={{ height: 16, width: 16, color: 'var(--moss)' }} />
             </div>
-            <h3 className="font-display font-bold text-lg" style={{ color: 'var(--fg)' }}>
+            <h3 className="font-display font-bold text-base sm:text-lg" style={{ color: 'var(--fg)' }}>
               Create Signature
             </h3>
           </div>
@@ -510,9 +510,9 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
         </div>
 
         {/* Tab Bar — pill segment */}
-        <div className="px-4 pt-3 pb-1 shrink-0">
+        <div className="px-3 sm:px-4 pt-2.5 sm:pt-3 pb-1 shrink-0">
           <div
-            className="flex gap-1 p-1.5 rounded-full overflow-x-auto no-scrollbar"
+            className="flex gap-1 p-1 rounded-full overflow-x-auto no-scrollbar"
             style={{ background: 'var(--bg-stone)' }}
             role="tablist"
           >
@@ -522,7 +522,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                 role="tab"
                 aria-selected={activeTab === tab.id}
                 onClick={() => handleTabChange(tab.id as any)}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 px-2 sm:px-3 rounded-full text-xs font-bold transition-all duration-200 shrink-0 cursor-pointer"
+                className="flex-1 flex items-center justify-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-1.5 sm:px-3 rounded-full text-xs font-bold transition-all duration-200 shrink-0 cursor-pointer"
                 style={{
                   background: activeTab === tab.id ? 'var(--moss)' : 'transparent',
                   color: activeTab === tab.id ? '#F3F4F1' : 'var(--fg-muted)',
@@ -530,7 +530,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                 }}
               >
                 {tab.icon}
-                <span className="text-[11px] sm:text-xs font-bold whitespace-nowrap">{tab.label}</span>
+                <span className="text-[10px] sm:text-xs font-bold whitespace-nowrap">{tab.label}</span>
               </button>
             ))}
           </div>
@@ -538,7 +538,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
 
         {/* Tab Body */}
         <div
-          className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 min-h-0"
+          className="p-3.5 sm:p-5 space-y-3.5 sm:space-y-4 overflow-y-auto flex-1 min-h-0"
           style={{
             scrollbarWidth: 'thin',
             scrollbarColor: 'var(--moss) rgba(0,0,0,0.06)',
@@ -552,9 +552,8 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
           >
             {/* Canvas well */}
             <div
-              className="relative rounded-[1.5rem] overflow-hidden select-none"
+              className="relative rounded-[1.25rem] sm:rounded-[1.5rem] overflow-hidden select-none h-32 xs:h-36 sm:h-44"
               style={{
-                height: 180,
                 background: 'rgba(255,255,255,0.65)',
                 border: '2px dashed rgba(93,112,82,0.30)',
                 boxShadow: 'inset 0 2px 12px rgba(44,44,36,0.06)',
@@ -1046,18 +1045,18 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
 
         {/* Footer */}
         <div
-          className="px-5 py-3 sm:py-3.5 flex items-center justify-end gap-3 shrink-0 border-t border-[var(--border-light)] bg-[var(--surface)]"
+          className="px-4 sm:px-5 py-2.5 sm:py-3.5 flex items-center justify-end gap-2 sm:gap-3 shrink-0 border-t border-[var(--border-light)] bg-[var(--surface)]"
         >
           <button
             onClick={onClose}
-            className="btn-ghost"
+            className="btn-ghost btn-sm"
             style={{ color: 'var(--fg-muted)' }}
           >
             Cancel
           </button>
           {activeTab !== 'saved' && activeTab !== 'upload' && (
-            <button onClick={handleSaveAndSelect} className="btn-primary">
-              <Check style={{ height: 15, width: 15 }} />
+            <button onClick={handleSaveAndSelect} className="btn-primary btn-sm">
+              <Check style={{ height: 14, width: 14 }} />
               <span>Use Signature</span>
             </button>
           )}

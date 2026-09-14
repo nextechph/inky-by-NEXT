@@ -74,27 +74,26 @@ export const MultiSignerPanel: React.FC<MultiSignerPanelProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 animate-fadeIn"
       style={{ background: 'rgba(44,44,36,0.50)', backdropFilter: 'blur(10px)' }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        className="card-organic max-w-md w-full overflow-hidden animate-slideUp"
-        style={{ borderRadius: '2.5rem' }}
+        className="card-organic max-w-md w-full max-h-[92vh] flex flex-col overflow-hidden animate-slideUp rounded-[1.75rem] sm:rounded-[2.5rem]"
       >
         {/* Header */}
         <div
-          className="flex items-center justify-between px-6 py-4"
+          className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 shrink-0"
           style={{ borderBottom: '1px solid var(--border-light)' }}
         >
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2 sm:gap-2.5">
             <div
-              className="h-9 w-9 rounded-2xl flex items-center justify-center"
+              className="h-8 sm:h-9 w-8 sm:w-9 rounded-2xl flex items-center justify-center"
               style={{ background: 'var(--clay-dim)' }}
             >
               <Users style={{ height: 16, width: 16, color: 'var(--terracotta)' }} />
             </div>
-            <h3 className="font-display font-bold text-lg" style={{ color: 'var(--fg)' }}>
+            <h3 className="font-display font-bold text-base sm:text-lg" style={{ color: 'var(--fg)' }}>
               Send to Signers
             </h3>
           </div>
@@ -109,7 +108,7 @@ export const MultiSignerPanel: React.FC<MultiSignerPanelProps> = ({
         </div>
 
         {/* Body */}
-        <div className="p-5 space-y-4">
+        <div className="p-3.5 sm:p-5 space-y-4 overflow-y-auto flex-1 min-h-0">
           {!sentResult ? (
             <>
               <p className="text-xs leading-relaxed" style={{ color: 'var(--fg-muted)' }}>
@@ -120,7 +119,7 @@ export const MultiSignerPanel: React.FC<MultiSignerPanelProps> = ({
                 {recipients.map((r, i) => (
                   <div
                     key={i}
-                    className="p-4 rounded-[1.5rem] space-y-3"
+                    className="p-3 sm:p-4 rounded-[1.25rem] sm:rounded-[1.5rem] space-y-3"
                     style={{
                       background: 'var(--bg-stone)',
                       border: '1px solid var(--border-light)',

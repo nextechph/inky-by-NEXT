@@ -51,28 +51,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 animate-fadeIn"
       style={{ background: 'rgba(44,44,36,0.50)', backdropFilter: 'blur(10px)' }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        className="card-organic max-w-md w-full overflow-hidden animate-slideUp"
-        style={{ borderRadius: '2.5rem' }}
+        className="card-organic max-w-md w-full max-h-[92vh] flex flex-col overflow-hidden animate-slideUp rounded-[1.75rem] sm:rounded-[2.5rem]"
       >
         {/* Header */}
         <div
-          className="flex items-center justify-between px-6 py-4"
+          className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 shrink-0"
           style={{ borderBottom: '1px solid var(--border-light)' }}
         >
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2 sm:gap-2.5">
             <div
-              className="h-9 w-9 rounded-2xl flex items-center justify-center"
+              className="h-8 sm:h-9 w-8 sm:w-9 rounded-2xl flex items-center justify-center"
               style={{ background: 'var(--moss-dim)' }}
             >
               <Shield style={{ height: 16, width: 16, color: 'var(--moss)' }} />
             </div>
             <div>
-              <h3 className="font-display font-bold text-lg" style={{ color: 'var(--fg)' }}>
+              <h3 className="font-display font-bold text-base sm:text-lg" style={{ color: 'var(--fg)' }}>
                 {user ? 'Account & Cloud Sync' : 'Inky Cloud Sync'}
               </h3>
             </div>
@@ -87,7 +86,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           </button>
         </div>
 
-        <div className="p-6 space-y-5">
+        <div className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1 min-h-0">
           {/* If already signed in */}
           {user ? (
             <div className="space-y-4 text-center py-2">

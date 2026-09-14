@@ -171,17 +171,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               role="button"
               tabIndex={0}
               onKeyDown={(e) => e.key === 'Enter' && onSelectDocument(doc)}
-              className="card-organic rounded-[2rem] px-5 py-4 flex items-center justify-between cursor-pointer transition-all duration-300 group"
+              className="card-organic rounded-[1.75rem] sm:rounded-[2rem] p-4 sm:px-5 sm:py-4 flex flex-col xs:flex-row xs:items-center justify-between gap-3 cursor-pointer transition-all duration-300 group"
             >
               {/* Left: icon + details */}
-              <div className="flex items-center gap-4 min-w-0">
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0 w-full xs:w-auto">
                 <div
                   className="h-11 w-11 rounded-2xl flex items-center justify-center shrink-0 transition-all duration-300 group-hover:scale-105"
                   style={{ background: 'var(--moss-dim)' }}
                 >
                   <FileText style={{ height: 20, width: 20, color: 'var(--moss)' }} />
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h4
                       className="font-bold text-sm truncate"
@@ -200,7 +200,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
 
               {/* Right: actions */}
-              <div className="flex items-center gap-2 shrink-0 ml-3">
+              <div className="flex items-center gap-2 shrink-0 self-end xs:self-center ml-0 xs:ml-3">
                 {doc.status === 'completed' ? (
                   <>
                     <button

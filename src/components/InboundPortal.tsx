@@ -124,16 +124,16 @@ export const InboundPortal: React.FC<InboundPortalProps> = ({ token }) => {
       >
         {/* Header */}
         <div
-          className="glass p-8 text-center space-y-2"
+          className="glass p-5 sm:p-8 text-center space-y-2"
           style={{ borderBottom: '1px solid var(--border-light)' }}
         >
           <div
-            className="h-14 w-14 rounded-[1.5rem] flex items-center justify-center mx-auto mb-4"
+            className="h-14 w-14 rounded-[1.5rem] flex items-center justify-center mx-auto mb-3 sm:mb-4"
             style={{ background: 'var(--moss-dim)' }}
           >
             <FileCheck style={{ height: 26, width: 26, color: 'var(--moss)' }} />
           </div>
-          <h2 className="font-display font-bold text-2xl" style={{ color: 'var(--fg)' }}>
+          <h2 className="font-display font-bold text-xl sm:text-2xl" style={{ color: 'var(--fg)' }}>
             {linkInfo.title || 'Upload Document for Signature'}
           </h2>
           {linkInfo.note && (
@@ -144,12 +144,12 @@ export const InboundPortal: React.FC<InboundPortalProps> = ({ token }) => {
         </div>
 
         {/* Body */}
-        <div className="p-6 sm:p-8">
+        <div className="p-5 sm:p-8">
           {!submittedResult ? (
-            <form onSubmit={handleSubmit} className="space-y-5">
+            <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
               {/* Drop zone */}
               <div
-                className="rounded-[1.75rem] p-8 text-center space-y-3 transition-all duration-300 hover:scale-[1.01]"
+                className="rounded-[1.75rem] p-5 sm:p-8 text-center space-y-3 transition-all duration-300 hover:scale-[1.01]"
                 style={{
                   background: file ? 'var(--moss-dim)' : 'rgba(255,255,255,0.60)',
                   border: `2px dashed ${file ? 'var(--moss)' : 'rgba(93,112,82,0.30)'}`,
