@@ -63,6 +63,7 @@ export function App() {
   const {
     signatures,
     isSigModalOpen,
+    initialSignature: storeInitialSig,
     loadSignatures,
     openSignatureModal,
     closeSignatureModal,
@@ -373,9 +374,15 @@ export function App() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleOpenSigModal = (fieldId?: string) => {
+  const handleOpenSigModal = (fieldId?: string, initialSig?: string) => {
     setTargetFieldId(fieldId);
-    openSignatureModal(fieldId);
+    const sig = initialSig || (fieldId ? fields.find((f) => f.id === fieldId)?.value : undefined);
+    openSignatureModal(fieldId, sig);
+  };
+
+  const handleCloseSigModal = () => {
+    setTargetFieldId(undefined);
+    closeSignatureModal();
   };
 
   const handleSelectSignatureFromModal = (dataUrl: string) => {
@@ -393,6 +400,9 @@ export function App() {
                   value: dataUrl,
                   width: Math.round(targetWidth * 10) / 10,
                   height: targetHeight,
+                  signerOrder: f.signerOrder !== undefined && f.signerOrder > 0 ? f.signerOrder : 0,
+                  signerEmail: f.signerEmail || user?.email || undefined,
+                  signerName: f.signerName || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Owner',
                 }
               : f
           )
@@ -400,6 +410,7 @@ export function App() {
       };
       img.src = dataUrl;
     }
+    setTargetFieldId(undefined);
     closeSignatureModal();
     loadSignatures();
   };
@@ -1048,9 +1059,10 @@ export function App() {
       {/* ── Modals & Notifications ──────────────────────────── */}
       <SignaturePadModal
         isOpen={isSigModalOpen}
-        onClose={closeSignatureModal}
+        onClose={handleCloseSigModal}
         onSelectSignature={handleSelectSignatureFromModal}
         title={targetFieldId && fields.find((f) => f.id === targetFieldId)?.value ? 'Edit / Redo Signature' : 'Create Signature'}
+        initialSignature={targetFieldId ? fields.find((f) => f.id === targetFieldId)?.value || storeInitialSig : storeInitialSig}
       />
 
       {selectedDoc && (

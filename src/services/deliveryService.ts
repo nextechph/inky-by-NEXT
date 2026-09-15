@@ -454,6 +454,15 @@ export const deliveryService = {
     for (const up of fieldUpdates) {
       const existingIdx = updatedFields.findIndex((f) => f.id === up.fieldId);
       if (existingIdx >= 0) {
+        const existingField = updatedFields[existingIdx];
+        // Security check: Never allow a signer to overwrite a field belonging to the owner or another recipient
+        const isOwnerField = existingField.signerOrder === 0 || (document.senderEmail && existingField.signerEmail && existingField.signerEmail.toLowerCase() === document.senderEmail.toLowerCase());
+        const isOtherRecipient = typeof existingField.signerOrder === 'number' && existingField.signerOrder > 0 && existingField.signerOrder !== recipient.signingOrder;
+        if (isOwnerField || isOtherRecipient) {
+          console.warn(`Prevented signer ${recipient.email} from overwriting protected field ${up.fieldId}`);
+          continue;
+        }
+
         updatedFields[existingIdx] = {
           ...updatedFields[existingIdx],
           value: up.value,

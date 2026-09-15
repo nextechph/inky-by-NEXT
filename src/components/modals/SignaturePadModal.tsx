@@ -12,6 +12,7 @@ interface SignaturePadModalProps {
   onClose: () => void;
   onSelectSignature: (dataUrl: string, label: string) => void;
   title?: string;
+  initialSignature?: string | null;
 }
 
 export const AVAILABLE_FONTS = [
@@ -55,6 +56,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
   onClose,
   onSelectSignature,
   title,
+  initialSignature,
 }) => {
   const [activeTab, setActiveTab]       = useState<'draw' | 'type' | 'upload' | 'saved'>('draw');
   const [typedText, setTypedText]       = useState('Your Name');
@@ -77,6 +79,8 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const sigPadRef = useRef<any | null>(null);
   const drawnPointsRef = useRef<any[] | null>(null);
+  const initialImageRef = useRef<HTMLImageElement | null>(null);
+  const hasClearedRef = useRef(false);
 
   const stylusModeRef = useRef(stylusMode);
   stylusModeRef.current = stylusMode;
@@ -112,6 +116,87 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
     return null;
   };
 
+  const drawInitialImage = (
+    img: HTMLImageElement,
+    ctx: CanvasRenderingContext2D,
+    canvasWidth: number,
+    canvasHeight: number
+  ) => {
+    const natW = img.naturalWidth || img.width;
+    const natH = img.naturalHeight || img.height;
+    if (!natW || !natH) return;
+
+    // Sized to fit comfortably in the canvas workspace
+    const maxW = Math.min(canvasWidth * 0.78, 650);
+    const maxH = Math.min(canvasHeight * 0.62, 260);
+
+    const scale = Math.min(maxW / natW, maxH / natH, 2.0);
+    const renderW = natW * scale;
+    const renderH = natH * scale;
+
+    // Center horizontally
+    const x = Math.round((canvasWidth - renderW) / 2);
+    // Center vertically above the dashed "Sign on the line" guideline
+    const guidelineY = canvasHeight - 38;
+    const availableH = guidelineY - 20;
+    const y = Math.max(16, Math.round((availableH - renderH) / 2 + 10));
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, x, y, renderW, renderH);
+    ctx.restore();
+  };
+
+  const redrawCanvasContent = (strokes?: any[]) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const cssW = canvas.clientWidth || canvas.offsetWidth;
+    const cssH = canvas.clientHeight || canvas.offsetHeight;
+    if (cssW <= 0 || cssH <= 0) return;
+
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    let hasContent = false;
+
+    // 1. Draw initial image if present and not explicitly cleared by user
+    if (initialImageRef.current && !hasClearedRef.current) {
+      drawInitialImage(initialImageRef.current, ctx, cssW, cssH);
+      hasContent = true;
+    }
+
+    // 2. Re-render any user stroke points on top without clearing underlying image
+    const pad = sigPadRef.current;
+    const strokeData = strokes !== undefined ? strokes : (pad ? pad.toData() : (drawnPointsRef.current || []));
+    if (strokeData && strokeData.length > 0) {
+      if (pad) {
+        pad.fromData(strokeData, { clear: false });
+      }
+      hasContent = true;
+    }
+
+    if (pad) {
+      (pad as any)._isEmpty = !hasContent;
+    }
+
+    if (hasContent) {
+      try {
+        const preview = trimCanvas(canvas, 4);
+        setDrawnPreview(preview);
+        const bY = getCanvasBottomY(canvas);
+        setSigBottomY(bY);
+      } catch {
+        // ignore
+      }
+    } else {
+      setDrawnPreview(null);
+      setSigBottomY(null);
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
       setSavedSigs(getSavedSignatures());
@@ -121,16 +206,35 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
       setCombinedPreviewUrl(null);
       setStylusDetected(false);
       drawnPointsRef.current = null;
+      initialImageRef.current = null;
+      hasClearedRef.current = false;
       sigPadRef.current?.clear();
+
+      if (initialSignature && typeof initialSignature === 'string' && initialSignature.trim().length > 0) {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          if (!hasClearedRef.current) {
+            initialImageRef.current = img;
+            redrawCanvasContent();
+          }
+        };
+        img.onerror = () => {
+          console.warn('Failed to load initial signature image');
+        };
+        img.src = initialSignature.trim();
+      }
     } else {
       drawnPointsRef.current = null;
+      initialImageRef.current = null;
+      hasClearedRef.current = false;
       setDrawnPreview(null);
       setSigBottomY(null);
       setCombinedPreviewUrl(null);
       activePointerIdRef.current = null;
       activePointerTypeRef.current = null;
     }
-  }, [isOpen]);
+  }, [isOpen, initialSignature]);
 
   const initOrResizePad = (force = false) => {
     const canvas = canvasRef.current;
@@ -228,19 +332,8 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
       sigPadRef.current.on();
     }
 
-    // Restore any existing strokes onto the newly sized canvas
-    if (savedData && savedData.length > 0) {
-      sigPadRef.current.fromData(savedData);
-      try {
-        if (canvasRef.current && !sigPadRef.current.isEmpty()) {
-          setDrawnPreview(trimCanvas(canvasRef.current, 4));
-          const bY = getCanvasBottomY(canvasRef.current);
-          setSigBottomY(bY);
-        }
-      } catch {
-        // ignore
-      }
-    }
+    // Restore existing content (initial image + drawn strokes) onto the newly sized canvas
+    redrawCanvasContent(savedData);
   };
 
   const handleColorChange = (newColor: string) => {
@@ -254,16 +347,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
           penColor: newColor,
         }));
         drawnPointsRef.current = updatedData;
-        sigPadRef.current.fromData(updatedData);
-        try {
-          if (canvasRef.current && !sigPadRef.current.isEmpty()) {
-            setDrawnPreview(trimCanvas(canvasRef.current, 4));
-            const bY = getCanvasBottomY(canvasRef.current);
-            setSigBottomY(bY);
-          }
-        } catch {
-          // ignore
-        }
+        redrawCanvasContent(updatedData);
       }
     }
   };
@@ -282,23 +366,16 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
           maxWidth: config.max,
         }));
         drawnPointsRef.current = updatedData;
-        sigPadRef.current.fromData(updatedData);
-        try {
-          if (canvasRef.current && !sigPadRef.current.isEmpty()) {
-            setDrawnPreview(trimCanvas(canvasRef.current, 4));
-            const bY = getCanvasBottomY(canvasRef.current);
-            setSigBottomY(bY);
-          }
-        } catch {
-          // ignore
-        }
+        redrawCanvasContent(updatedData);
       }
     }
   };
 
   const handleClear = () => {
-    sigPadRef.current?.clear();
+    hasClearedRef.current = true;
+    initialImageRef.current = null;
     drawnPointsRef.current = null;
+    sigPadRef.current?.clear();
     setDrawnPreview(null);
     setSigBottomY(null);
     setCombinedPreviewUrl(null);
@@ -604,7 +681,12 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
         useToastStore.getState().showToast('Please draw a signature first', 'warning');
         return;
       }
-      dataUrl = trimCanvas(canvasRef.current!, 8);
+      const hasNewStrokes = Boolean(drawnPointsRef.current && drawnPointsRef.current.length > 0);
+      if (!hasNewStrokes && initialSignature && !hasClearedRef.current && !(includePrintedName && effectiveName)) {
+        dataUrl = initialSignature;
+      } else {
+        dataUrl = trimCanvas(canvasRef.current!, 8);
+      }
       label = sigLabel.trim() || (includePrintedName && effectiveName ? effectiveName : 'Drawn Signature');
     } else if (activeTab === 'type') {
       if (!typedText.trim()) {

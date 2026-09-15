@@ -995,10 +995,43 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
 
   // Determine which fields belong to this recipient
   const isMyField = (field: SignatureField) => {
-    if (field.signerOrder) return field.signerOrder === recipient.signingOrder;
-    if (field.signerEmail) return field.signerEmail.toLowerCase() === recipient.email.toLowerCase();
-    if (field.signerId) return field.signerId === recipient.id;
-    // If unassigned, allow signing
+    // 1. Explicit owner field (signerOrder === 0) belongs to sender/owner, never to recipient
+    if (field.signerOrder === 0) {
+      return false;
+    }
+
+    // 2. Explicit sender email match belongs to sender/owner
+    if (doc?.senderEmail && field.signerEmail && field.signerEmail.toLowerCase() === doc.senderEmail.toLowerCase()) {
+      return false;
+    }
+
+    // 3. Explicit signer order (> 0)
+    if (typeof field.signerOrder === 'number' && field.signerOrder > 0) {
+      return field.signerOrder === recipient.signingOrder;
+    }
+
+    // 4. Explicit signer email
+    if (field.signerEmail) {
+      return field.signerEmail.toLowerCase() === recipient.email.toLowerCase();
+    }
+
+    // 5. Explicit signer ID
+    if (field.signerId) {
+      return field.signerId === recipient.id;
+    }
+
+    // 6. If the field was signed/filled by this recipient in this browser session
+    if (fieldValues[field.id]?.value) {
+      return true;
+    }
+
+    // 7. Unassigned field that ALREADY has a value from the document
+    // (signed by the document creator/owner prior to sending) -> cannot be claimed or overwritten by recipient
+    if (field.value) {
+      return false;
+    }
+
+    // 8. Otherwise, an empty unassigned placeholder can be filled by this recipient
     return true;
   };
 
@@ -1659,12 +1692,16 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
                         className={`signature-field-box group ${mine && !currentVal ? 'animate-pulse' : ''}`}
                       >
                         {/* Signer Identification Badge */}
-                        {(isSelected || !currentVal) && (
+                        {(isSelected || !currentVal || isHovered) && (
                           <span
-                            className="absolute -top-2.5 left-2 px-1.5 py-0.5 rounded-full text-[9px] font-bold text-white shadow-xs z-30 pointer-events-none truncate max-w-[120px]"
-                            style={{ background: mine ? signerColor : '#7A7A70' }}
+                            className="absolute -top-2.5 left-2 px-1.5 py-0.5 rounded-full text-[9px] font-bold text-white shadow-xs z-30 pointer-events-none truncate max-w-[140px]"
+                            style={{ background: mine ? signerColor : field.signerOrder === 0 ? 'var(--moss)' : '#7A7A70' }}
                           >
-                            {mine ? 'You' : `Signer ${field.signerOrder || ''}`}
+                            {mine
+                              ? 'You'
+                              : field.signerOrder === 0 || (field.signerEmail && doc?.senderEmail && field.signerEmail.toLowerCase() === doc.senderEmail.toLowerCase()) || (field.value && !field.signerOrder)
+                              ? (field.signerName || 'Sender / Owner')
+                              : (field.signerName || `Signer ${field.signerOrder || ''}`)}
                           </span>
                         )}
 
@@ -2157,6 +2194,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
           handleSelectSignature(dataUrl, activeSigFieldId || undefined);
         }}
         title={activeSigFieldId && (fieldValues[activeSigFieldId]?.value || fields.find((f) => f.id === activeSigFieldId)?.value) ? 'Edit / Redo Signature' : 'Create Signature'}
+        initialSignature={activeSigFieldId ? (fieldValues[activeSigFieldId]?.value || fields.find((f) => f.id === activeSigFieldId)?.value) : undefined}
       />
     </div>
   );

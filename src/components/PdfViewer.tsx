@@ -27,6 +27,7 @@ import { Dropdown } from './ui/Dropdown';
 import { FastTextInput } from './ui/FastTextInput';
 import { useDocumentStore } from '../store/useDocumentStore';
 import { useToastStore } from '../store/useToastStore';
+import { useAuthStore } from '../store/useAuthStore';
 
 export const getSignerColor = (order?: number) => {
   if (order === 1) return '#C18C5D'; // Terracotta
@@ -53,7 +54,7 @@ interface PdfViewerProps {
   pdfUrl: string;
   fields: SignatureField[];
   setFields: React.Dispatch<React.SetStateAction<SignatureField[]>>;
-  onOpenSignatureModal: (fieldId?: string) => void;
+  onOpenSignatureModal: (fieldId?: string, initialSignature?: string) => void;
   onSignAndExport: () => void;
   onSendClick: () => void;
   isSigningLoading: boolean;
@@ -69,6 +70,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   onSendClick,
   isSigningLoading,
 }) => {
+  const { user } = useAuthStore();
   const [pdfDoc, setPdfDoc]               = useState<any | null>(null);
   const [numPages, setNumPages]           = useState<number>(1);
   const [currentPage, setCurrentPage]     = useState<number>(1);
@@ -805,7 +807,8 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   );
 
   const signerOptions = [
-    { value: '0', label: 'Assign: Anyone / Owner' },
+    { value: '0', label: 'Assign: Me (Owner)' },
+    { value: '-1', label: 'Assign: Anyone (Unassigned)' },
     ...recipients.map((r) => ({
       value: String(r.signingOrder),
       label: `Signer ${r.signingOrder}: ${r.name}`,
@@ -1054,7 +1057,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                   if (field.fieldType === 'signature' && !locked) {
                     if (isSelected) {
                       // Already selected, clicking again opens modal to edit / redo!
-                      onOpenSignatureModal(field.id);
+                      onOpenSignatureModal(field.id, field.value);
                     } else {
                       setSelectedFieldId(field.id);
                     }
@@ -1066,7 +1069,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                   e.stopPropagation();
                   if (field.fieldType === 'signature' && !locked) {
                     setSelectedFieldId(field.id);
-                    onOpenSignatureModal(field.id);
+                    onOpenSignatureModal(field.id, field.value);
                   }
                 }}
                 style={{
@@ -1092,7 +1095,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 className="group"
               >
                 {/* Signer Tag Badge */}
-                {field.signerOrder && (
+                {(field.signerOrder !== undefined && field.signerOrder !== null) && (
                   <span
                     className={`absolute -top-2.5 left-2 px-2 py-0.5 rounded-full text-[9px] font-bold text-white shadow-xs z-30 pointer-events-none truncate max-w-[150px] flex items-center gap-1 transition-opacity duration-150 ${
                       isSelected || !hasValue ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
@@ -1100,7 +1103,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                     style={{ background: locked ? 'var(--moss)' : fieldSignerColor }}
                   >
                     {locked && <Lock style={{ height: 9, width: 9 }} />}
-                    <span>{field.signerName ? `${field.signerName}${locked ? ' (Signed)' : ''}` : `Signer ${field.signerOrder}`}</span>
+                    <span>{field.signerName ? `${field.signerName}${locked ? ' (Signed)' : ''}` : (field.signerOrder === 0 ? 'Me (Owner)' : `Signer ${field.signerOrder}`)}</span>
                   </span>
                 )}
                 {field.fieldType === 'signature' ? (
@@ -1111,7 +1114,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                         if (!hasDraggedFieldRef.current && !locked) {
                           e.stopPropagation();
                           setSelectedFieldId(field.id);
-                          onOpenSignatureModal(field.id);
+                          onOpenSignatureModal(field.id, field.value);
                         }
                       }}
                       title={locked ? undefined : 'Click to edit or redo signature'}
@@ -1126,7 +1129,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                     <div
                       onClick={(e) => {
                         e.stopPropagation();
-                        onOpenSignatureModal(field.id);
+                        onOpenSignatureModal(field.id, field.value);
                       }}
                       className="flex items-center gap-1 text-xs font-bold cursor-pointer"
                       style={{ color: 'var(--moss)' }}
@@ -1193,7 +1196,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              onOpenSignatureModal(field.id);
+                              onOpenSignatureModal(field.id, field.value);
                             }}
                             className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold text-white shadow-xs transition-all duration-150 hover:brightness-110 active:scale-95 cursor-pointer shrink-0"
                             style={{ background: 'var(--moss)' }}
@@ -1230,29 +1233,59 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                           <Users style={{ height: 11, width: 11, color: 'var(--fg-muted)' }} />
                           <div className="w-32 sm:w-36">
                             <Dropdown
-                              value={String(field.signerOrder || 0)}
+                              value={String(field.signerOrder !== undefined && field.signerOrder !== null ? field.signerOrder : -1)}
                               onChange={(val) => {
                                 if (val === '__add__') {
                                   onSendClick();
                                   return;
                                 }
                                 const order = Number(val);
-                                const targetRec = recipients.find((r) => r.signingOrder === order);
-                                setFields((prev) =>
-                                  prev.map((f) =>
-                                    f.id === field.id
-                                      ? {
-                                          ...f,
-                                          signerOrder: order === 0 ? undefined : order,
-                                          signerName: targetRec?.name,
-                                          signerEmail: targetRec?.email,
-                                          signerId: targetRec?.id,
-                                          // Clear value if assigning to a recipient so owner's draft signature doesn't get assigned to them
-                                          value: order !== 0 && !isFieldLocked(f) ? '' : f.value,
-                                        }
-                                      : f
-                                  )
-                                );
+                                if (order === 0) {
+                                  setFields((prev) =>
+                                    prev.map((f) =>
+                                      f.id === field.id
+                                        ? {
+                                            ...f,
+                                            signerOrder: 0,
+                                            signerName: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Me (Owner)',
+                                            signerEmail: user?.email || undefined,
+                                            signerId: undefined,
+                                          }
+                                        : f
+                                    )
+                                  );
+                                } else if (order === -1) {
+                                  setFields((prev) =>
+                                    prev.map((f) =>
+                                      f.id === field.id
+                                        ? {
+                                            ...f,
+                                            signerOrder: undefined,
+                                            signerName: undefined,
+                                            signerEmail: undefined,
+                                            signerId: undefined,
+                                          }
+                                        : f
+                                    )
+                                  );
+                                } else {
+                                  const targetRec = recipients.find((r) => r.signingOrder === order);
+                                  setFields((prev) =>
+                                    prev.map((f) =>
+                                      f.id === field.id
+                                        ? {
+                                            ...f,
+                                            signerOrder: order,
+                                            signerName: targetRec?.name,
+                                            signerEmail: targetRec?.email,
+                                            signerId: targetRec?.id,
+                                            // Clear value if assigning to a recipient so owner's draft signature doesn't get assigned to them
+                                            value: !isFieldLocked(f) ? '' : f.value,
+                                          }
+                                        : f
+                                    )
+                                  );
+                                }
                               }}
                               options={signerOptions}
                               buttonClassName="!h-7 !py-0 px-2 text-[11px] bg-white/90"

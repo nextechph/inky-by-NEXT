@@ -8,10 +8,11 @@ interface SignatureState {
   signatures: SavedSignature[];
   isSigModalOpen: boolean;
   targetFieldId?: string;
+  initialSignature?: string;
 
   // Actions
   loadSignatures: () => void;
-  openSignatureModal: (fieldId?: string) => void;
+  openSignatureModal: (fieldId?: string, initialSignature?: string) => void;
   closeSignatureModal: () => void;
   addSignature: (dataUrl: string, type: 'draw' | 'type' | 'upload', label?: string, isDefault?: boolean) => SavedSignature;
   removeSignature: (id: string) => void;
@@ -23,6 +24,7 @@ export const useSignatureStore = create<SignatureState>((set, get) => ({
   signatures: [],
   isSigModalOpen: false,
   targetFieldId: undefined,
+  initialSignature: undefined,
 
   loadSignatures: async () => {
     const list = signatureService.getSignatures();
@@ -37,12 +39,12 @@ export const useSignatureStore = create<SignatureState>((set, get) => ({
     }
   },
 
-  openSignatureModal: (fieldId) => {
-    set({ isSigModalOpen: true, targetFieldId: fieldId });
+  openSignatureModal: (fieldId, initialSignature) => {
+    set({ isSigModalOpen: true, targetFieldId: fieldId, initialSignature });
   },
 
   closeSignatureModal: () => {
-    set({ isSigModalOpen: false, targetFieldId: undefined });
+    set({ isSigModalOpen: false, targetFieldId: undefined, initialSignature: undefined });
   },
 
   addSignature: (dataUrl, type, label = 'My Signature', isDefault = false) => {
