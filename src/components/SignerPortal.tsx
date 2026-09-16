@@ -64,7 +64,19 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
   // Dynamic fields state (starts with context.fields, supports signer adding fields on the fly)
   const [fields, setFields] = useState<SignatureField[]>([]);
   // Local field value changes by this signer
-  const [fieldValues, setFieldValues] = useState<Record<string, { value: string; fontFamily?: string }>>({});
+  const [fieldValues, setFieldValues] = useState<
+    Record<
+      string,
+      {
+        value: string;
+        fontFamily?: string;
+        rawSignature?: string;
+        printedName?: string;
+        printedNameScale?: number;
+        printedNameSpacing?: number;
+      }
+    >
+  >({});
   const [isSigModalOpen, setIsSigModalOpen] = useState(false);
   const [recentSignature, setRecentSignature] = useState<SavedSignature | null>(() => {
     return getDefaultSignature() || getSavedSignatures()[0] || null;
@@ -1150,7 +1162,13 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
     if (fieldToFill) {
       setFieldValues((prev) => ({
         ...prev,
-        [fieldToFill]: { value: dataUrl },
+        [fieldToFill]: {
+          value: dataUrl,
+          rawSignature: meta?.rawSignature,
+          printedName: meta?.printedName,
+          printedNameScale: meta?.printedNameScale,
+          printedNameSpacing: meta?.printedNameSpacing,
+        },
       }));
       setFields((prev) =>
         prev.map((f) =>
@@ -2255,10 +2273,10 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
         }}
         title={activeSigFieldId && (fieldValues[activeSigFieldId]?.value || fields.find((f) => f.id === activeSigFieldId)?.value) ? 'Edit / Redo Signature' : 'Create Signature'}
         initialSignature={activeSigFieldId ? (fieldValues[activeSigFieldId]?.value || fields.find((f) => f.id === activeSigFieldId)?.value) : undefined}
-        initialRawSignature={activeSigFieldId ? fields.find((f) => f.id === activeSigFieldId)?.rawSignature : undefined}
-        initialPrintedName={activeSigFieldId ? fields.find((f) => f.id === activeSigFieldId)?.printedName : undefined}
-        initialPrintedNameScale={activeSigFieldId ? fields.find((f) => f.id === activeSigFieldId)?.printedNameScale : undefined}
-        initialPrintedNameSpacing={activeSigFieldId ? fields.find((f) => f.id === activeSigFieldId)?.printedNameSpacing : undefined}
+        initialRawSignature={activeSigFieldId ? (fieldValues[activeSigFieldId]?.rawSignature || fields.find((f) => f.id === activeSigFieldId)?.rawSignature) : undefined}
+        initialPrintedName={activeSigFieldId ? (fieldValues[activeSigFieldId]?.printedName || fields.find((f) => f.id === activeSigFieldId)?.printedName) : undefined}
+        initialPrintedNameScale={activeSigFieldId ? (fieldValues[activeSigFieldId]?.printedNameScale || fields.find((f) => f.id === activeSigFieldId)?.printedNameScale) : undefined}
+        initialPrintedNameSpacing={activeSigFieldId ? (fieldValues[activeSigFieldId]?.printedNameSpacing || fields.find((f) => f.id === activeSigFieldId)?.printedNameSpacing) : undefined}
       />
     </div>
   );

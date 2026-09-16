@@ -259,10 +259,13 @@ export const documentService = {
       }
     }
 
+    // Hydrate fields with any saved rawSignatures from IndexedDB
+    const hydratedFields = await storage.hydrateFieldsWithRawSignatures(fields);
+
     return {
       ...doc,
       filePath: blobUrl,
-      fields,
+      fields: hydratedFields,
       recipients,
     };
   },

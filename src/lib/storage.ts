@@ -100,6 +100,56 @@ export async function removePdfBytes(id: string): Promise<void> {
   });
 }
 
+export async function storeFieldRawSignatures(fields: SignatureField[]): Promise<void> {
+  const fieldsWithRaw = fields.filter((f) => f.id && f.rawSignature);
+  if (fieldsWithRaw.length === 0) return;
+  try {
+    const db = await openDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      fieldsWithRaw.forEach((f) => {
+        store.put(f.rawSignature, `raw_sig_${f.id}`);
+      });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.warn('Could not store raw signatures in IndexedDB:', err);
+  }
+}
+
+export async function hydrateFieldsWithRawSignatures(fields: SignatureField[]): Promise<SignatureField[]> {
+  try {
+    const db = await openDb();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const promises = fields.map(
+        (f) =>
+          new Promise<SignatureField>((res) => {
+            if (f.rawSignature) {
+              res(f);
+              return;
+            }
+            const req = store.get(`raw_sig_${f.id}`);
+            req.onsuccess = () => {
+              if (req.result && typeof req.result === 'string') {
+                res({ ...f, rawSignature: req.result });
+              } else {
+                res(f);
+              }
+            };
+            req.onerror = () => res(f);
+          })
+      );
+      Promise.all(promises).then(resolve);
+    });
+  } catch {
+    return fields;
+  }
+}
+
 // ── Document Storage ───────────────────────────────────────────────────────
 export function getLocalDocuments(userId?: string): Document[] {
   try {
@@ -187,7 +237,10 @@ export function getLocalDocumentFields(docId: string): SignatureField[] {
 
 export function saveLocalDocumentFields(docId: string, fields: SignatureField[]): void {
   try {
-    // Exclude rawSignature from localStorage payload to keep it lean and prevent quota errors
+    // 1. Asynchronously persist full raw signatures in IndexedDB (zero quota limits)
+    storeFieldRawSignatures(fields).catch(console.warn);
+
+    // 2. Exclude rawSignature from localStorage payload to keep it lean and prevent quota errors
     const sanitized = fields.map((f) => {
       if (f.rawSignature) {
         const { rawSignature, ...rest } = f;

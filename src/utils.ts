@@ -203,14 +203,39 @@ export function cacheSignatureMeta(dataUrl: string, meta: SignatureMeta): void {
 
 export function getSignatureMeta(dataUrl?: string | null): SignatureMeta | null {
   if (!dataUrl) return null;
-  return sigMetaMemoryCache.get(dataUrl) || null;
+  // 1. In-memory cache
+  const inMem = sigMetaMemoryCache.get(dataUrl);
+  if (inMem) return inMem;
+
+  // 2. Check saved signatures in localStorage
+  try {
+    const raw = localStorage.getItem('inky_saved_signatures');
+    if (raw) {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) {
+        const found = list.find((s: any) => s.dataUrl === dataUrl || s.rawSignature === dataUrl);
+        if (found && found.rawSignature) {
+          const meta: SignatureMeta = {
+            rawSignature: found.rawSignature,
+            printedName: found.printedName,
+            fontSizeScale: found.printedNameScale,
+            nameSpacing: found.printedNameSpacing,
+          };
+          sigMetaMemoryCache.set(dataUrl, meta);
+          return meta;
+        }
+      }
+    }
+  } catch {}
+
+  return null;
 }
 
 /**
  * Robustly separates a signature image into its raw drawing signature and printed name.
  * If cached metadata is found, returns the clean raw signature instantly.
- * If not cached (e.g. older signatures created before metadata tracking), inspects canvas pixels
- * to isolate the top signature strokes from any printed text block at the bottom.
+ * If no printed name is expected, returns the signature completely untouched.
+ * Never cuts into hand-drawn strokes or descenders.
  */
 export async function separateSignatureAndPrintedName(
   dataUrl: string,
@@ -232,7 +257,12 @@ export async function separateSignatureAndPrintedName(
     };
   }
 
-  // 2. Pixel scan path: detect bottom printed name
+  // 2. Safety guard: if there is no printed name, NEVER cut the signature!
+  if (!knownName || !knownName.trim()) {
+    return { rawSignature: dataUrl, printedName: undefined, detected: false };
+  }
+
+  // 3. Bounded pixel scan: only look for a gap in the bottom-most text strip
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -279,17 +309,18 @@ export async function separateSignatureAndPrintedName(
         }
 
         const contentH = bottomY - topY;
-        if (bottomY === -1 || contentH < 35) {
+        if (bottomY === -1 || contentH < 40) {
           resolve({ rawSignature: dataUrl, printedName: knownName, detected: false });
           return;
         }
 
-        // Look for separation between text block and signature in the bottom 45% of content
-        const textRegionStart = Math.floor(bottomY - contentH * 0.45);
+        // Bounded text region: A printed name is at most ~46px or 28% of total content height
+        const maxTextHeight = Math.min(46, Math.floor(contentH * 0.28));
+        const textRegionStart = Math.max(topY + Math.floor(contentH * 0.70), bottomY - maxTextHeight);
         let bestCutY = -1;
         let textFound = false;
 
-        // Scan from bottom row upward
+        // Scan from bottom row upward strictly within the text region
         for (let y = bottomY; y >= textRegionStart; y--) {
           if (rowDensities[y] > 0) {
             textFound = true;
@@ -300,21 +331,8 @@ export async function separateSignatureAndPrintedName(
           }
         }
 
-        // Fallback: If no completely transparent row exists (e.g. tight/overlapping tail),
-        // find the local minimum pixel density in the expected transition boundary
-        if (bestCutY === -1 && textFound) {
-          const zoneStart = Math.floor(bottomY - contentH * 0.38);
-          const zoneEnd = Math.floor(bottomY - contentH * 0.12);
-          let minDensity = Infinity;
-          for (let y = zoneStart; y <= zoneEnd; y++) {
-            if (rowDensities[y] < minDensity) {
-              minDensity = rowDensities[y];
-              bestCutY = y;
-            }
-          }
-        }
-
-        if (bestCutY > topY + 20) {
+        // If a valid gap is found strictly above the text and below the signature:
+        if (bestCutY > topY + 25 && bestCutY >= textRegionStart) {
           const sigCanvas = document.createElement('canvas');
           sigCanvas.width = width;
           sigCanvas.height = bestCutY;
@@ -334,6 +352,7 @@ export async function separateSignatureAndPrintedName(
         // ignore
       }
 
+      // If no clean separation exists in the text strip, preserve full image untouched
       resolve({ rawSignature: dataUrl, printedName: knownName, detected: false });
     };
     img.onerror = () => resolve({ rawSignature: dataUrl, printedName: knownName, detected: false });

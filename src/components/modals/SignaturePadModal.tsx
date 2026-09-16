@@ -242,35 +242,68 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
         setNameSpacing(8);
       }
 
-      const sigToProcess = initialRawSignature || initialSignature;
-      if (sigToProcess && typeof sigToProcess === 'string' && sigToProcess.trim().length > 0) {
-        separateSignatureAndPrintedName(sigToProcess.trim(), initialPrintedName).then(
-          ({ rawSignature, printedName: detectedName, fontSizeScale, nameSpacing: detectedSpacing, detected }) => {
-            if (hasClearedFlagRef.current) return;
-
-            cleanRawSigRef.current = rawSignature;
-
-            if (detected && detectedName && !initialPrintedName) {
-              setIncludePrintedName(true);
-              setPrintedName(detectedName.toUpperCase());
-              if (fontSizeScale) setNameFontSizeScale(fontSizeScale);
-              if (detectedSpacing !== undefined) setNameSpacing(detectedSpacing);
-            }
-
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.onload = () => {
-              if (!hasClearedFlagRef.current) {
-                initialImageRef.current = img;
-                redrawCanvasContent();
-              }
-            };
-            img.onerror = () => {
-              console.warn('Failed to load initial signature image');
-            };
-            img.src = rawSignature;
+      if (initialRawSignature && typeof initialRawSignature === 'string' && initialRawSignature.trim().length > 0) {
+        // Fast lossless path: raw signature is already available, load directly with 100% fidelity
+        const cleanRaw = initialRawSignature.trim();
+        cleanRawSigRef.current = cleanRaw;
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          if (!hasClearedFlagRef.current) {
+            initialImageRef.current = img;
+            redrawCanvasContent();
           }
-        );
+        };
+        img.onerror = () => {
+          console.warn('Failed to load initial raw signature image');
+        };
+        img.src = cleanRaw;
+      } else if (initialSignature && typeof initialSignature === 'string' && initialSignature.trim().length > 0) {
+        const sigToProcess = initialSignature.trim();
+        if (initialPrintedName && initialPrintedName.trim()) {
+          separateSignatureAndPrintedName(sigToProcess, initialPrintedName.trim()).then(
+            ({ rawSignature, printedName: detectedName, fontSizeScale, nameSpacing: detectedSpacing, detected }) => {
+              if (hasClearedFlagRef.current) return;
+
+              cleanRawSigRef.current = rawSignature;
+
+              if (detected && detectedName && !initialPrintedName) {
+                setIncludePrintedName(true);
+                setPrintedName(detectedName.toUpperCase());
+                if (fontSizeScale) setNameFontSizeScale(fontSizeScale);
+                if (detectedSpacing !== undefined) setNameSpacing(detectedSpacing);
+              }
+
+              const img = new Image();
+              img.crossOrigin = 'anonymous';
+              img.onload = () => {
+                if (!hasClearedFlagRef.current) {
+                  initialImageRef.current = img;
+                  redrawCanvasContent();
+                }
+              };
+              img.onerror = () => {
+                console.warn('Failed to load initial signature image');
+              };
+              img.src = rawSignature;
+            }
+          );
+        } else {
+          // No printed name: pure signature, load directly without cutting
+          cleanRawSigRef.current = sigToProcess;
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            if (!hasClearedFlagRef.current) {
+              initialImageRef.current = img;
+              redrawCanvasContent();
+            }
+          };
+          img.onerror = () => {
+            console.warn('Failed to load initial signature image');
+          };
+          img.src = sigToProcess;
+        }
       }
     } else {
       drawnPointsRef.current = null;
