@@ -54,7 +54,16 @@ interface PdfViewerProps {
   pdfUrl: string;
   fields: SignatureField[];
   setFields: React.Dispatch<React.SetStateAction<SignatureField[]>>;
-  onOpenSignatureModal: (fieldId?: string, initialSignature?: string) => void;
+  onOpenSignatureModal: (
+    fieldId?: string,
+    initialSignature?: string,
+    meta?: {
+      rawSignature?: string;
+      printedName?: string;
+      printedNameScale?: number;
+      printedNameSpacing?: number;
+    }
+  ) => void;
   onSignAndExport: () => void;
   onSendClick: () => void;
   isSigningLoading: boolean;
@@ -216,42 +225,87 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     return () => { isMounted = false; };
   }, [pdfUrl, getContainerFitScale]);
 
+  const currentRenderTaskRef = useRef<any>(null);
+
   useEffect(() => {
-    if (!scrollContainerRef.current || !pdfDoc) return;
-    const observer = new ResizeObserver(() => {
+    if (!pdfDoc) return;
+    let resizeTimer: any = null;
+    const handleWindowResize = () => {
       if (window.innerWidth >= 640) return;
       if (userZoomedRef.current) return;
-      pdfDoc.getPage(currentPage).then((page: any) => {
-        const unscaledViewport = page.getViewport({ scale: 1.0 });
-        const fitScale = getContainerFitScale(unscaledViewport.width, unscaledViewport.height);
-        setScale(fitScale);
-      }).catch(() => {});
-    });
-    observer.observe(scrollContainerRef.current);
-    return () => observer.disconnect();
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        pdfDoc.getPage(currentPage).then((page: any) => {
+          const unscaledViewport = page.getViewport({ scale: 1.0 });
+          const fitScale = getContainerFitScale(unscaledViewport.width, unscaledViewport.height);
+          setScale((currentScale) => {
+            if (Math.abs(currentScale - fitScale) > 0.03) {
+              return fitScale;
+            }
+            return currentScale;
+          });
+        }).catch(() => {});
+      }, 150);
+    };
+
+    window.addEventListener('resize', handleWindowResize);
+    return () => {
+      clearTimeout(resizeTimer);
+      window.removeEventListener('resize', handleWindowResize);
+    };
   }, [pdfDoc, currentPage, getContainerFitScale]);
 
   useEffect(() => {
     if (!pdfDoc || !canvasRef.current) return;
-    let renderTask: any = null;
+    let isCancelled = false;
+
     const renderPage = async () => {
+      if (currentRenderTaskRef.current) {
+        try {
+          currentRenderTaskRef.current.cancel();
+        } catch {}
+      }
+
       try {
-        const page     = await pdfDoc.getPage(currentPage);
+        const page = await pdfDoc.getPage(currentPage);
+        if (isCancelled) return;
+
         const viewport = page.getViewport({ scale });
-        const canvas   = canvasRef.current!;
-        const ctx      = canvas.getContext('2d');
+        const canvas = canvasRef.current;
+        if (!canvas || isCancelled) return;
+
+        const ctx = canvas.getContext('2d');
         if (!ctx) return;
+
         canvas.height = viewport.height;
-        canvas.width  = viewport.width;
-        setCanvasDimensions({ width: viewport.width, height: viewport.height });
-        renderTask = page.render({ canvasContext: ctx, viewport });
-        await renderTask.promise;
+        canvas.width = viewport.width;
+        setCanvasDimensions((prev) => {
+          if (prev.width === viewport.width && prev.height === viewport.height) {
+            return prev;
+          }
+          return { width: viewport.width, height: viewport.height };
+        });
+
+        const task = page.render({ canvasContext: ctx, viewport });
+        currentRenderTaskRef.current = task;
+        await task.promise;
       } catch (err: any) {
-        if (err.name !== 'RenderingCancelledException') console.error(err);
+        if (err.name !== 'RenderingCancelledException') {
+          console.error('PDF render error:', err);
+        }
       }
     };
+
     renderPage();
-    return () => { if (renderTask) renderTask.cancel(); };
+
+    return () => {
+      isCancelled = true;
+      if (currentRenderTaskRef.current) {
+        try {
+          currentRenderTaskRef.current.cancel();
+        } catch {}
+      }
+    };
   }, [pdfDoc, currentPage, scale]);
 
   // Mobile double-tap to zoom in / reset to fit
@@ -778,6 +832,15 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     onOpenSignatureModal(newFieldId);
   };
 
+  const openFieldSigModal = (f: SignatureField) => {
+    onOpenSignatureModal(f.id, f.value, {
+      rawSignature: f.rawSignature,
+      printedName: f.printedName,
+      printedNameScale: f.printedNameScale,
+      printedNameSpacing: f.printedNameSpacing,
+    });
+  };
+
   // Shared pill button for toolbar tools
   const toolBtn = (
     label: string,
@@ -1057,7 +1120,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                   if (field.fieldType === 'signature' && !locked) {
                     if (isSelected) {
                       // Already selected, clicking again opens modal to edit / redo!
-                      onOpenSignatureModal(field.id, field.value);
+                      openFieldSigModal(field);
                     } else {
                       setSelectedFieldId(field.id);
                     }
@@ -1069,7 +1132,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                   e.stopPropagation();
                   if (field.fieldType === 'signature' && !locked) {
                     setSelectedFieldId(field.id);
-                    onOpenSignatureModal(field.id, field.value);
+                    openFieldSigModal(field);
                   }
                 }}
                 style={{
@@ -1114,7 +1177,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                         if (!hasDraggedFieldRef.current && !locked) {
                           e.stopPropagation();
                           setSelectedFieldId(field.id);
-                          onOpenSignatureModal(field.id, field.value);
+                          openFieldSigModal(field);
                         }
                       }}
                       title={locked ? undefined : 'Click to edit or redo signature'}
@@ -1129,7 +1192,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                     <div
                       onClick={(e) => {
                         e.stopPropagation();
-                        onOpenSignatureModal(field.id, field.value);
+                        openFieldSigModal(field);
                       }}
                       className="flex items-center gap-1 text-xs font-bold cursor-pointer"
                       style={{ color: 'var(--moss)' }}
@@ -1196,7 +1259,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              onOpenSignatureModal(field.id, field.value);
+                              openFieldSigModal(field);
                             }}
                             className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold text-white shadow-xs transition-all duration-150 hover:brightness-110 active:scale-95 cursor-pointer shrink-0"
                             style={{ background: 'var(--moss)' }}

@@ -49,10 +49,13 @@ export const realtimeService = {
       'postgres_changes',
       { event: '*', schema: 'public', table: 'documents' },
       async (payload: any) => {
-        console.log('⚡ [Realtime] Document event:', payload.eventType, payload.new);
+        const store = useDocumentStore.getState();
+        const currentSelected = store.selectedDoc;
 
-        // Always re-fetch documents list to stay synchronized
-        useDocumentStore.getState().fetchDocuments();
+        // If on dashboard, keep list synchronized
+        if (store.activeTab === 'dashboard') {
+          store.fetchDocuments();
+        }
 
         if (payload.eventType === 'INSERT') {
           const newDoc = payload.new;
@@ -69,20 +72,24 @@ export const realtimeService = {
           }
         } else if (payload.eventType === 'UPDATE') {
           const updatedDoc = payload.new;
-          const currentSelected = useDocumentStore.getState().selectedDoc;
 
-          // If currently viewing this document, live update its status and metadata
-          if (currentSelected && currentSelected.id === updatedDoc.id) {
+          // Only update selectedDoc if status or title actually changed to prevent render loops
+          if (
+            currentSelected &&
+            currentSelected.id === updatedDoc.id &&
+            (currentSelected.status !== updatedDoc.status || currentSelected.title !== updatedDoc.title)
+          ) {
             useDocumentStore.setState({
               selectedDoc: {
                 ...currentSelected,
                 status: updatedDoc.status,
+                title: updatedDoc.title,
                 updatedAt: updatedDoc.updated_at,
               },
             });
           }
 
-          if (updatedDoc.status === 'completed') {
+          if (updatedDoc.status === 'completed' && currentSelected?.status !== 'completed') {
             useToastStore.getState().showToast(
               `🎉 "${updatedDoc.title || 'Document'}" has been completed by all signers!`,
               'success'
@@ -97,13 +104,21 @@ export const realtimeService = {
       'postgres_changes',
       { event: '*', schema: 'public', table: 'signature_fields' },
       (payload: any) => {
-        console.log('⚡ [Realtime] Field event:', payload.eventType, payload.new);
         const currentSelected = useDocumentStore.getState().selectedDoc;
 
         if (payload.eventType === 'UPDATE') {
           const updatedField = payload.new;
           if (currentSelected && currentSelected.id === updatedField.document_id) {
             const currentFields = useDocumentStore.getState().fields;
+            const existing = currentFields.find((f) => f.id === updatedField.id);
+            // Skip echo from our own update if value and font already match
+            if (
+              existing &&
+              existing.value === updatedField.value &&
+              (existing.fontFamily || null) === (updatedField.font_family || null)
+            ) {
+              return;
+            }
             const updated = currentFields.map((f) =>
               f.id === updatedField.id
                 ? {

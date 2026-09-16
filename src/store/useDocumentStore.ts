@@ -29,6 +29,15 @@ interface DocumentState {
   resetStore: () => void;
 }
 
+let autoSaveFieldsTimeout: any = null;
+
+function debouncedAutoSaveFields(docId: string, fields: SignatureField[]) {
+  if (autoSaveFieldsTimeout) clearTimeout(autoSaveFieldsTimeout);
+  autoSaveFieldsTimeout = setTimeout(() => {
+    documentService.saveFields(docId, fields, false);
+  }, 400);
+}
+
 export const useDocumentStore = create<DocumentState>((set, get) => ({
   documents: [],
   selectedDoc: null,
@@ -48,14 +57,14 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       set((state) => {
         const nextFields = fields(state.fields);
         if (state.selectedDoc) {
-          documentService.saveFields(state.selectedDoc.id, nextFields, false);
+          debouncedAutoSaveFields(state.selectedDoc.id, nextFields);
         }
         return { fields: nextFields };
       });
     } else {
       const { selectedDoc } = get();
       if (selectedDoc) {
-        documentService.saveFields(selectedDoc.id, fields, false);
+        debouncedAutoSaveFields(selectedDoc.id, fields);
       }
       set({ fields });
     }
@@ -108,6 +117,10 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
   },
 
   saveCurrentFields: async () => {
+    if (autoSaveFieldsTimeout) {
+      clearTimeout(autoSaveFieldsTimeout);
+      autoSaveFieldsTimeout = null;
+    }
     const { selectedDoc, fields } = get();
     if (!selectedDoc) return;
     try {

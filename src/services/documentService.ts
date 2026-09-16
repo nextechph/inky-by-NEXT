@@ -145,16 +145,20 @@ export const documentService = {
     let docs = storage.getLocalDocuments();
     let doc = docs.find((d) => d.id === id);
 
-    // If Supabase is configured, sync the latest document metadata from cloud
+    let fields = storage.getLocalDocumentFields(id);
+    let recipients = storage.getLocalDocumentRecipients(id);
+
+    // If Supabase is configured, sync document metadata, recipients, and fields concurrently
     if (isSupabaseConfigured() && supabase) {
       try {
-        const { data: cloudDoc, error } = await supabase
-          .from('documents')
-          .select('*')
-          .eq('id', id)
-          .maybeSingle();
+        const [cloudDocRes, cloudRecipientsRes, cloudFieldsRes] = await Promise.allSettled([
+          supabase.from('documents').select('*').eq('id', id).maybeSingle(),
+          supabase.from('document_recipients').select('*').eq('document_id', id),
+          supabase.from('signature_fields').select('*').eq('document_id', id),
+        ]);
 
-        if (cloudDoc && !error) {
+        if (cloudDocRes.status === 'fulfilled' && cloudDocRes.value.data && !cloudDocRes.value.error) {
+          const cloudDoc = cloudDocRes.value.data;
           doc = {
             id: cloudDoc.id,
             ownerId: cloudDoc.user_id,
@@ -171,8 +175,48 @@ export const documentService = {
           };
           storage.saveLocalDocumentMeta(doc);
         }
+
+        if (cloudRecipientsRes.status === 'fulfilled' && cloudRecipientsRes.value.data && cloudRecipientsRes.value.data.length > 0) {
+          recipients = cloudRecipientsRes.value.data.map((r: any) => ({
+            id: r.id,
+            documentId: r.document_id,
+            email: r.email,
+            name: r.name,
+            signingOrder: r.signing_order,
+            status: r.status,
+            signedAt: r.signed_at,
+            token: r.token,
+          }));
+          storage.saveLocalDocumentRecipients(id, recipients);
+        }
+
+        if (cloudFieldsRes.status === 'fulfilled' && cloudFieldsRes.value.data && cloudFieldsRes.value.data.length > 0) {
+          const cloudFields = cloudFieldsRes.value.data;
+          const mappedCloudFields: SignatureField[] = cloudFields.map((f: any) => ({
+            id: f.id,
+            documentId: f.document_id,
+            pageNumber: f.page_number,
+            x: f.x,
+            y: f.y,
+            width: f.width,
+            height: f.height,
+            fieldType: f.field_type,
+            value: f.value,
+            fontFamily: f.font_family,
+            required: f.required ?? true,
+            signerId: f.signer_id,
+            signerEmail: f.signer_email,
+            signerOrder: f.signer_order,
+            signerName: f.signer_name,
+          }));
+
+          const cloudIds = new Set(cloudFields.map((f: any) => f.id));
+          const localOnly = fields.filter((lf) => !cloudIds.has(lf.id));
+          fields = [...mappedCloudFields, ...localOnly];
+          storage.saveLocalDocumentFields(id, fields);
+        }
       } catch (err) {
-        console.warn('Failed to fetch document metadata from Supabase:', err);
+        console.warn('Failed to sync document details from Supabase:', err);
       }
     }
 
@@ -212,70 +256,6 @@ export const documentService = {
         blobUrlCache.set(id, blobUrl);
       } else {
         blobUrl = doc.filePath;
-      }
-    }
-
-    let fields = storage.getLocalDocumentFields(id);
-    let recipients = storage.getLocalDocumentRecipients(id);
-
-    // Fetch latest cloud recipients and fields whenever Supabase is configured
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data: cloudRecipients } = await supabase
-          .from('document_recipients')
-          .select('*')
-          .eq('document_id', id);
-
-        if (cloudRecipients && cloudRecipients.length > 0) {
-          recipients = cloudRecipients.map((r: any) => ({
-            id: r.id,
-            documentId: r.document_id,
-            email: r.email,
-            name: r.name,
-            signingOrder: r.signing_order,
-            status: r.status,
-            signedAt: r.signed_at,
-            token: r.token,
-          }));
-          storage.saveLocalDocumentRecipients(id, recipients);
-        }
-      } catch (e) {
-        console.warn('Failed to fetch recipients from Supabase:', e);
-      }
-
-      try {
-        const { data: cloudFields } = await supabase
-          .from('signature_fields')
-          .select('*')
-          .eq('document_id', id);
-
-        if (cloudFields && cloudFields.length > 0) {
-          const mappedCloudFields: SignatureField[] = cloudFields.map((f: any) => ({
-            id: f.id,
-            documentId: f.document_id,
-            pageNumber: f.page_number,
-            x: f.x,
-            y: f.y,
-            width: f.width,
-            height: f.height,
-            fieldType: f.field_type,
-            value: f.value,
-            fontFamily: f.font_family,
-            required: f.required ?? true,
-            signerId: f.signer_id,
-            signerEmail: f.signer_email,
-            signerOrder: f.signer_order,
-            signerName: f.signer_name,
-          }));
-
-          // Merge: cloud fields take priority for remote values, but preserve any local uncommitted draft fields
-          const cloudIds = new Set(cloudFields.map((f: any) => f.id));
-          const localOnly = fields.filter((lf) => !cloudIds.has(lf.id));
-          fields = [...mappedCloudFields, ...localOnly];
-          storage.saveLocalDocumentFields(id, fields);
-        }
-      } catch (e) {
-        console.warn('Failed to fetch signature fields from Supabase:', e);
       }
     }
 

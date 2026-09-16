@@ -166,6 +166,182 @@ export function processUploadedSignature(dataUrl: string): Promise<string> {
 }
 
 /**
+ * Metadata stored for signatures with printed names.
+ */
+export interface SignatureMeta {
+  rawSignature: string;
+  printedName?: string;
+  fontSizeScale?: number;
+  nameSpacing?: number;
+  textColor?: string;
+  fontFamily?: string;
+}
+
+const sigMetaMemoryCache = new Map<string, SignatureMeta>();
+
+// Purge any previously stored large base64 entries from localStorage to instantly reclaim quota
+try {
+  const metaKeys: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith('inky_sig_meta_')) {
+      metaKeys.push(k);
+    }
+  }
+  metaKeys.forEach((k) => localStorage.removeItem(k));
+} catch {}
+
+export function cacheSignatureMeta(dataUrl: string, meta: SignatureMeta): void {
+  if (!dataUrl) return;
+  // Bounded in-memory cache (keep newest 80 signatures)
+  if (sigMetaMemoryCache.size > 80) {
+    const firstKey = sigMetaMemoryCache.keys().next().value;
+    if (firstKey) sigMetaMemoryCache.delete(firstKey);
+  }
+  sigMetaMemoryCache.set(dataUrl, meta);
+}
+
+export function getSignatureMeta(dataUrl?: string | null): SignatureMeta | null {
+  if (!dataUrl) return null;
+  return sigMetaMemoryCache.get(dataUrl) || null;
+}
+
+/**
+ * Robustly separates a signature image into its raw drawing signature and printed name.
+ * If cached metadata is found, returns the clean raw signature instantly.
+ * If not cached (e.g. older signatures created before metadata tracking), inspects canvas pixels
+ * to isolate the top signature strokes from any printed text block at the bottom.
+ */
+export async function separateSignatureAndPrintedName(
+  dataUrl: string,
+  knownName?: string
+): Promise<{ rawSignature: string; printedName?: string; fontSizeScale?: number; nameSpacing?: number; detected: boolean }> {
+  if (!dataUrl || typeof dataUrl !== 'string') {
+    return { rawSignature: '', detected: false };
+  }
+
+  // 1. Fast path: check cached metadata
+  const cached = getSignatureMeta(dataUrl);
+  if (cached && cached.rawSignature) {
+    return {
+      rawSignature: cached.rawSignature,
+      printedName: cached.printedName || knownName,
+      fontSizeScale: cached.fontSizeScale,
+      nameSpacing: cached.nameSpacing,
+      detected: true,
+    };
+  }
+
+  // 2. Pixel scan path: detect bottom printed name
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const width = img.naturalWidth || img.width;
+      const height = img.naturalHeight || img.height;
+      if (width < 30 || height < 40) {
+        resolve({ rawSignature: dataUrl, printedName: knownName, detected: false });
+        return;
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve({ rawSignature: dataUrl, printedName: knownName, detected: false });
+        return;
+      }
+      ctx.drawImage(img, 0, 0);
+
+      try {
+        const imgData = ctx.getImageData(0, 0, width, height);
+        const data = imgData.data;
+
+        // Calculate visible pixel density for each horizontal row
+        const rowDensities: number[] = new Array(height).fill(0);
+        let bottomY = -1;
+        let topY = height;
+
+        for (let y = 0; y < height; y++) {
+          let count = 0;
+          const rowOffset = y * width * 4;
+          for (let x = 0; x < width; x++) {
+            if (data[rowOffset + x * 4 + 3] > 20) {
+              count++;
+            }
+          }
+          rowDensities[y] = count;
+          if (count > 0) {
+            if (y < topY) topY = y;
+            bottomY = y;
+          }
+        }
+
+        const contentH = bottomY - topY;
+        if (bottomY === -1 || contentH < 35) {
+          resolve({ rawSignature: dataUrl, printedName: knownName, detected: false });
+          return;
+        }
+
+        // Look for separation between text block and signature in the bottom 45% of content
+        const textRegionStart = Math.floor(bottomY - contentH * 0.45);
+        let bestCutY = -1;
+        let textFound = false;
+
+        // Scan from bottom row upward
+        for (let y = bottomY; y >= textRegionStart; y--) {
+          if (rowDensities[y] > 0) {
+            textFound = true;
+          } else if (textFound) {
+            // Found transparent gap directly above bottom text!
+            bestCutY = y;
+            break;
+          }
+        }
+
+        // Fallback: If no completely transparent row exists (e.g. tight/overlapping tail),
+        // find the local minimum pixel density in the expected transition boundary
+        if (bestCutY === -1 && textFound) {
+          const zoneStart = Math.floor(bottomY - contentH * 0.38);
+          const zoneEnd = Math.floor(bottomY - contentH * 0.12);
+          let minDensity = Infinity;
+          for (let y = zoneStart; y <= zoneEnd; y++) {
+            if (rowDensities[y] < minDensity) {
+              minDensity = rowDensities[y];
+              bestCutY = y;
+            }
+          }
+        }
+
+        if (bestCutY > topY + 20) {
+          const sigCanvas = document.createElement('canvas');
+          sigCanvas.width = width;
+          sigCanvas.height = bestCutY;
+          const sigCtx = sigCanvas.getContext('2d');
+          if (sigCtx) {
+            sigCtx.drawImage(canvas, 0, 0, width, bestCutY, 0, 0, width, bestCutY);
+            const trimmedRaw = trimCanvas(sigCanvas, 6);
+            resolve({
+              rawSignature: trimmedRaw,
+              printedName: knownName,
+              detected: true,
+            });
+            return;
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      resolve({ rawSignature: dataUrl, printedName: knownName, detected: false });
+    };
+    img.onerror = () => resolve({ rawSignature: dataUrl, printedName: knownName, detected: false });
+    img.src = dataUrl;
+  });
+}
+
+/**
  * Combines a signature image with a printed name underneath ("Signature over Printed Name")
  * Clean format: signature on top, printed name directly below without divider line, clear legible font.
  */
@@ -322,7 +498,17 @@ export async function combineSignatureAndName(
       // 2. Draw printed name with exact gap
       ctx.fillText(cleanName, totalWidth / 2, textBaselineY);
 
-      resolve(trimCanvas(canvas, 6));
+      const result = trimCanvas(canvas, 6);
+      cacheSignatureMeta(result, {
+        rawSignature: sigDataUrl,
+        printedName: cleanName,
+        fontSizeScale,
+        nameSpacing,
+        textColor,
+        fontFamily,
+      });
+
+      resolve(result);
     };
     img.onerror = () => resolve(sigDataUrl);
     img.src = sigDataUrl;

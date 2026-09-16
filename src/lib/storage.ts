@@ -186,7 +186,19 @@ export function getLocalDocumentFields(docId: string): SignatureField[] {
 }
 
 export function saveLocalDocumentFields(docId: string, fields: SignatureField[]): void {
-  localStorage.setItem(`inky_fields_${docId}`, JSON.stringify(fields));
+  try {
+    // Exclude rawSignature from localStorage payload to keep it lean and prevent quota errors
+    const sanitized = fields.map((f) => {
+      if (f.rawSignature) {
+        const { rawSignature, ...rest } = f;
+        return rest;
+      }
+      return f;
+    });
+    localStorage.setItem(`inky_fields_${docId}`, JSON.stringify(sanitized));
+  } catch (err) {
+    console.warn('Could not save document fields to localStorage (quota limit reached):', err);
+  }
 }
 
 export function getLocalDocumentRecipients(docId: string): Recipient[] {

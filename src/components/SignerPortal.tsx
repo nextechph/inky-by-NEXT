@@ -329,43 +329,70 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
     return () => { isMounted = false; };
   }, [context?.pdfBlob, context?.document?.id, context?.document?.filePath, getContainerFitScale]);
 
+  const currentRenderTaskRef = useRef<any>(null);
+
   useEffect(() => {
-    if (!scrollContainerRef.current || !pdfDoc) return;
-    const observer = new ResizeObserver(() => {
+    if (!pdfDoc) return;
+    let resizeTimer: any = null;
+    const handleWindowResize = () => {
       if (window.innerWidth >= 640) return;
       if (userZoomedRef.current) return;
-      pdfDoc.getPage(currentPage).then((page: any) => {
-        const unscaledViewport = page.getViewport({ scale: 1.0 });
-        const fitScale = getContainerFitScale(unscaledViewport.width, unscaledViewport.height);
-        setScale(fitScale);
-      }).catch(() => {});
-    });
-    observer.observe(scrollContainerRef.current);
-    return () => observer.disconnect();
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        pdfDoc.getPage(currentPage).then((page: any) => {
+          const unscaledViewport = page.getViewport({ scale: 1.0 });
+          const fitScale = getContainerFitScale(unscaledViewport.width, unscaledViewport.height);
+          setScale((currentScale) => {
+            if (Math.abs(currentScale - fitScale) > 0.03) {
+              return fitScale;
+            }
+            return currentScale;
+          });
+        }).catch(() => {});
+      }, 150);
+    };
+
+    window.addEventListener('resize', handleWindowResize);
+    return () => {
+      clearTimeout(resizeTimer);
+      window.removeEventListener('resize', handleWindowResize);
+    };
   }, [pdfDoc, currentPage, getContainerFitScale]);
 
-  // Render current PDF page - re-runs immediately when canvas mounts, page changes, scale changes, or when reopening/editing
+  // Render current PDF page - safe cancellation and dimension update
   useEffect(() => {
-    let renderTask: any = null;
-    let isMounted = true;
+    let isCancelled = false;
 
     const renderPage = async () => {
       const canvas = canvasRef.current;
       if (!pdfDoc || !canvas) return;
+
+      if (currentRenderTaskRef.current) {
+        try {
+          currentRenderTaskRef.current.cancel();
+        } catch {}
+      }
+
       try {
         const page = await pdfDoc.getPage(currentPage);
-        if (!isMounted) return;
+        if (isCancelled) return;
 
         const viewport = page.getViewport({ scale });
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx || isCancelled) return;
 
         canvas.width = viewport.width;
         canvas.height = viewport.height;
-        setCanvasDimensions({ width: viewport.width, height: viewport.height });
+        setCanvasDimensions((prev) => {
+          if (prev.width === viewport.width && prev.height === viewport.height) {
+            return prev;
+          }
+          return { width: viewport.width, height: viewport.height };
+        });
 
-        renderTask = page.render({ canvasContext: ctx, viewport });
-        await renderTask.promise;
+        const task = page.render({ canvasContext: ctx, viewport });
+        currentRenderTaskRef.current = task;
+        await task.promise;
       } catch (err: any) {
         if (err.name !== 'RenderingCancelledException') {
           console.error('Error rendering page:', err);
@@ -375,8 +402,12 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
 
     renderPage();
     return () => {
-      isMounted = false;
-      if (renderTask) renderTask.cancel();
+      isCancelled = true;
+      if (currentRenderTaskRef.current) {
+        try {
+          currentRenderTaskRef.current.cancel();
+        } catch {}
+      }
     };
   }, [pdfDoc, currentPage, scale, canvasMountedVersion, isReopening, submittedResult]);
 
@@ -1093,7 +1124,16 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
     setIsSigModalOpen(true);
   };
 
-  const handleSelectSignature = (dataUrl: string, targetFieldId?: string) => {
+  const handleSelectSignature = (
+    dataUrl: string,
+    targetFieldId?: string,
+    meta?: {
+      rawSignature?: string;
+      printedName?: string;
+      printedNameScale?: number;
+      printedNameSpacing?: number;
+    }
+  ) => {
     // Only treat targetFieldId or activeSigFieldId as a field ID if it matches an actual existing field.
     // Note: SignaturePadModal passes its label (e.g. "Drawn Signature", "Uploaded Signature")
     // as the 2nd argument. We MUST NOT mistake that label for a field ID!
@@ -1113,7 +1153,18 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
         [fieldToFill]: { value: dataUrl },
       }));
       setFields((prev) =>
-        prev.map((f) => (f.id === fieldToFill ? { ...f, value: dataUrl } : f))
+        prev.map((f) =>
+          f.id === fieldToFill
+            ? {
+                ...f,
+                value: dataUrl,
+                rawSignature: meta?.rawSignature,
+                printedName: meta?.printedName,
+                printedNameScale: meta?.printedNameScale,
+                printedNameSpacing: meta?.printedNameSpacing,
+              }
+            : f
+        )
       );
       setSelectedFieldId(fieldToFill);
       useToastStore.getState().showToast('Signature placed', 'success');
@@ -1133,6 +1184,10 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
         height: 8,
         fieldType: 'signature',
         value: dataUrl,
+        rawSignature: meta?.rawSignature,
+        printedName: meta?.printedName,
+        printedNameScale: meta?.printedNameScale,
+        printedNameSpacing: meta?.printedNameSpacing,
         required: true,
         signerId: recipient.id,
         signerEmail: recipient.email,
@@ -2077,7 +2132,12 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
                       key={sig.id}
                       type="button"
                       onClick={() => {
-                        handleSelectSignature(sig.dataUrl);
+                        handleSelectSignature(sig.dataUrl, undefined, {
+                          rawSignature: sig.rawSignature,
+                          printedName: sig.printedName,
+                          printedNameScale: sig.printedNameScale,
+                          printedNameSpacing: sig.printedNameSpacing,
+                        });
                         setIsSigDropdownOpen(false);
                       }}
                       className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-2xl text-left transition-colors hover:bg-[var(--moss-dim)] group cursor-pointer"
@@ -2190,11 +2250,15 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
           setActiveSigFieldId(null);
           setPendingAddCoords(null);
         }}
-        onSelectSignature={(dataUrl) => {
-          handleSelectSignature(dataUrl, activeSigFieldId || undefined);
+        onSelectSignature={(dataUrl, label, meta) => {
+          handleSelectSignature(dataUrl, activeSigFieldId || undefined, meta);
         }}
         title={activeSigFieldId && (fieldValues[activeSigFieldId]?.value || fields.find((f) => f.id === activeSigFieldId)?.value) ? 'Edit / Redo Signature' : 'Create Signature'}
         initialSignature={activeSigFieldId ? (fieldValues[activeSigFieldId]?.value || fields.find((f) => f.id === activeSigFieldId)?.value) : undefined}
+        initialRawSignature={activeSigFieldId ? fields.find((f) => f.id === activeSigFieldId)?.rawSignature : undefined}
+        initialPrintedName={activeSigFieldId ? fields.find((f) => f.id === activeSigFieldId)?.printedName : undefined}
+        initialPrintedNameScale={activeSigFieldId ? fields.find((f) => f.id === activeSigFieldId)?.printedNameScale : undefined}
+        initialPrintedNameSpacing={activeSigFieldId ? fields.find((f) => f.id === activeSigFieldId)?.printedNameSpacing : undefined}
       />
     </div>
   );

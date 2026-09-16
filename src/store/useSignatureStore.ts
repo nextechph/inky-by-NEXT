@@ -4,15 +4,23 @@ import { SavedSignature } from '../types';
 import { signatureService } from '../services/signatureService';
 import { useToastStore } from './useToastStore';
 
+interface SignatureFieldMeta {
+  rawSignature?: string;
+  printedName?: string;
+  printedNameScale?: number;
+  printedNameSpacing?: number;
+}
+
 interface SignatureState {
   signatures: SavedSignature[];
   isSigModalOpen: boolean;
   targetFieldId?: string;
   initialSignature?: string;
+  fieldMeta?: SignatureFieldMeta;
 
   // Actions
   loadSignatures: () => void;
-  openSignatureModal: (fieldId?: string, initialSignature?: string) => void;
+  openSignatureModal: (fieldId?: string, initialSignature?: string, meta?: SignatureFieldMeta) => void;
   closeSignatureModal: () => void;
   addSignature: (dataUrl: string, type: 'draw' | 'type' | 'upload', label?: string, isDefault?: boolean) => SavedSignature;
   removeSignature: (id: string) => void;
@@ -25,6 +33,7 @@ export const useSignatureStore = create<SignatureState>((set, get) => ({
   isSigModalOpen: false,
   targetFieldId: undefined,
   initialSignature: undefined,
+  fieldMeta: undefined,
 
   loadSignatures: async () => {
     const list = signatureService.getSignatures();
@@ -39,12 +48,12 @@ export const useSignatureStore = create<SignatureState>((set, get) => ({
     }
   },
 
-  openSignatureModal: (fieldId, initialSignature) => {
-    set({ isSigModalOpen: true, targetFieldId: fieldId, initialSignature });
+  openSignatureModal: (fieldId, initialSignature, meta) => {
+    set({ isSigModalOpen: true, targetFieldId: fieldId, initialSignature, fieldMeta: meta });
   },
 
   closeSignatureModal: () => {
-    set({ isSigModalOpen: false, targetFieldId: undefined, initialSignature: undefined });
+    set({ isSigModalOpen: false, targetFieldId: undefined, initialSignature: undefined, fieldMeta: undefined });
   },
 
   addSignature: (dataUrl, type, label = 'My Signature', isDefault = false) => {

@@ -64,6 +64,7 @@ export function App() {
     signatures,
     isSigModalOpen,
     initialSignature: storeInitialSig,
+    fieldMeta: storeFieldMeta,
     loadSignatures,
     openSignatureModal,
     closeSignatureModal,
@@ -374,10 +375,26 @@ export function App() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleOpenSigModal = (fieldId?: string, initialSig?: string) => {
+  const handleOpenSigModal = (
+    fieldId?: string,
+    initialSig?: string,
+    meta?: {
+      rawSignature?: string;
+      printedName?: string;
+      printedNameScale?: number;
+      printedNameSpacing?: number;
+    }
+  ) => {
     setTargetFieldId(fieldId);
-    const sig = initialSig || (fieldId ? fields.find((f) => f.id === fieldId)?.value : undefined);
-    openSignatureModal(fieldId, sig);
+    const targetField = fieldId ? fields.find((f) => f.id === fieldId) : undefined;
+    const sig = initialSig || targetField?.value;
+    const effectiveMeta = meta || (targetField ? {
+      rawSignature: targetField.rawSignature,
+      printedName: targetField.printedName,
+      printedNameScale: targetField.printedNameScale,
+      printedNameSpacing: targetField.printedNameSpacing,
+    } : undefined);
+    openSignatureModal(fieldId, sig, effectiveMeta);
   };
 
   const handleCloseSigModal = () => {
@@ -385,7 +402,16 @@ export function App() {
     closeSignatureModal();
   };
 
-  const handleSelectSignatureFromModal = (dataUrl: string) => {
+  const handleSelectSignatureFromModal = (
+    dataUrl: string,
+    label: string,
+    meta?: {
+      rawSignature?: string;
+      printedName?: string;
+      printedNameScale?: number;
+      printedNameSpacing?: number;
+    }
+  ) => {
     if (targetFieldId) {
       const img = new Image();
       img.onload = () => {
@@ -398,6 +424,10 @@ export function App() {
               ? {
                   ...f,
                   value: dataUrl,
+                  rawSignature: meta?.rawSignature,
+                  printedName: meta?.printedName,
+                  printedNameScale: meta?.printedNameScale,
+                  printedNameSpacing: meta?.printedNameSpacing,
                   width: Math.round(targetWidth * 10) / 10,
                   height: targetHeight,
                   signerOrder: f.signerOrder !== undefined && f.signerOrder > 0 ? f.signerOrder : 0,
@@ -1056,13 +1086,16 @@ export function App() {
         />
       )}
 
-      {/* ── Modals & Notifications ──────────────────────────── */}
       <SignaturePadModal
         isOpen={isSigModalOpen}
         onClose={handleCloseSigModal}
         onSelectSignature={handleSelectSignatureFromModal}
         title={targetFieldId && fields.find((f) => f.id === targetFieldId)?.value ? 'Edit / Redo Signature' : 'Create Signature'}
         initialSignature={targetFieldId ? fields.find((f) => f.id === targetFieldId)?.value || storeInitialSig : storeInitialSig}
+        initialRawSignature={targetFieldId ? fields.find((f) => f.id === targetFieldId)?.rawSignature || storeFieldMeta?.rawSignature : storeFieldMeta?.rawSignature}
+        initialPrintedName={targetFieldId ? fields.find((f) => f.id === targetFieldId)?.printedName || storeFieldMeta?.printedName : storeFieldMeta?.printedName}
+        initialPrintedNameScale={targetFieldId ? fields.find((f) => f.id === targetFieldId)?.printedNameScale || storeFieldMeta?.printedNameScale : storeFieldMeta?.printedNameScale}
+        initialPrintedNameSpacing={targetFieldId ? fields.find((f) => f.id === targetFieldId)?.printedNameSpacing || storeFieldMeta?.printedNameSpacing : storeFieldMeta?.printedNameSpacing}
       />
 
       {selectedDoc && (

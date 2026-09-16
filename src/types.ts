@@ -36,6 +36,10 @@ export interface SignatureField {
   height: number;
   fieldType: FieldType;
   value?: string; // image data URL or text
+  rawSignature?: string; // Pure signature image data URL (without printed name)
+  printedName?: string; // Text of printed name if enabled
+  printedNameScale?: number; // Size scale factor (0.8 - 1.5)
+  printedNameSpacing?: number; // Gap spacing in px (-15 to 35)
   fontFamily?: string; // e.g. 'Inter', 'Times New Roman', etc.
   signerId?: string;
   signerEmail?: string;
@@ -72,6 +76,10 @@ export interface SavedSignature {
   id: string;
   type: 'draw' | 'type' | 'upload';
   dataUrl: string;
+  rawSignature?: string;
+  printedName?: string;
+  printedNameScale?: number;
+  printedNameSpacing?: number;
   label: string;
   isDefault: boolean;
   createdAt: string;

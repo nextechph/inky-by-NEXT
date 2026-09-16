@@ -185,7 +185,12 @@ export async function flattenPdfSignatures(
       try {
         // Signature, initials, or drawn/uploaded stamp image
         const base64Data = field.value.split(',')[1] || field.value;
-        const imgBytes = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
+        const binStr = atob(base64Data);
+        const len = binStr.length;
+        const imgBytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          imgBytes[i] = binStr.charCodeAt(i);
+        }
         const isJpg =
           field.value.startsWith('data:image/jpeg') || field.value.startsWith('data:image/jpg');
         const img = isJpg ? await pdfDoc.embedJpg(imgBytes) : await pdfDoc.embedPng(imgBytes);

@@ -3,16 +3,29 @@ import SignaturePad from 'signature_pad';
 import { X, PenTool, Type, Upload, History, Check, RotateCcw, ChevronDown, Minus, Plus, ShieldCheck } from 'lucide-react';
 import { saveSignature, getSavedSignatures } from '../../lib/storage';
 import { SavedSignature } from '../../types';
-import { trimCanvas, processUploadedSignature, combineSignatureAndName } from '../../utils';
+import { trimCanvas, processUploadedSignature, combineSignatureAndName, separateSignatureAndPrintedName, cacheSignatureMeta } from '../../utils';
 import { useToastStore } from '../../store/useToastStore';
 import { Dropdown } from '../ui/Dropdown';
 
 interface SignaturePadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelectSignature: (dataUrl: string, label: string) => void;
+  onSelectSignature: (
+    dataUrl: string,
+    label: string,
+    meta?: {
+      rawSignature?: string;
+      printedName?: string;
+      printedNameScale?: number;
+      printedNameSpacing?: number;
+    }
+  ) => void;
   title?: string;
   initialSignature?: string | null;
+  initialRawSignature?: string | null;
+  initialPrintedName?: string;
+  initialPrintedNameScale?: number;
+  initialPrintedNameSpacing?: number;
 }
 
 export const AVAILABLE_FONTS = [
@@ -44,9 +57,9 @@ const INK_COLORS = [
 ];
 
 export const STROKE_WIDTH_OPTIONS = [
-  { id: 'thin',   label: 'Fine',   min: 0.8, max: 2.0, lineWeight: 1.5 },
-  { id: 'medium', label: 'Medium', min: 1.5, max: 3.5, lineWeight: 2.5 },
-  { id: 'thick',  label: 'Bold',   min: 2.8, max: 5.5, lineWeight: 4 },
+  { id: 'thin',   label: 'Fine',   min: 1.0, max: 2.2, dotSize: 1.8, lineWeight: 1.5 },
+  { id: 'medium', label: 'Medium', min: 2.2, max: 4.8, dotSize: 3.5, lineWeight: 2.5 },
+  { id: 'thick',  label: 'Bold',   min: 4.2, max: 8.5, dotSize: 6.2, lineWeight: 4 },
 ] as const;
 
 export type StrokeWidthType = typeof STROKE_WIDTH_OPTIONS[number]['id'];
@@ -57,6 +70,10 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
   onSelectSignature,
   title,
   initialSignature,
+  initialRawSignature,
+  initialPrintedName,
+  initialPrintedNameScale,
+  initialPrintedNameSpacing,
 }) => {
   const [activeTab, setActiveTab]       = useState<'draw' | 'type' | 'upload' | 'saved'>('draw');
   const [typedText, setTypedText]       = useState('Your Name');
@@ -80,7 +97,8 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
   const sigPadRef = useRef<any | null>(null);
   const drawnPointsRef = useRef<any[] | null>(null);
   const initialImageRef = useRef<HTMLImageElement | null>(null);
-  const hasClearedRef = useRef(false);
+  const cleanRawSigRef = useRef<string | null>(null);
+  const hasClearedFlagRef = useRef(false);
 
   const stylusModeRef = useRef(stylusMode);
   stylusModeRef.current = stylusMode;
@@ -163,7 +181,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
     let hasContent = false;
 
     // 1. Draw initial image if present and not explicitly cleared by user
-    if (initialImageRef.current && !hasClearedRef.current) {
+    if (initialImageRef.current && !hasClearedFlagRef.current) {
       drawInitialImage(initialImageRef.current, ctx, cssW, cssH);
       hasContent = true;
     }
@@ -173,6 +191,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
     const strokeData = strokes !== undefined ? strokes : (pad ? pad.toData() : (drawnPointsRef.current || []));
     if (strokeData && strokeData.length > 0) {
       if (pad) {
+        (pad as any)._data = [];
         pad.fromData(strokeData, { clear: false });
       }
       hasContent = true;
@@ -207,34 +226,64 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
       setStylusDetected(false);
       drawnPointsRef.current = null;
       initialImageRef.current = null;
-      hasClearedRef.current = false;
+      cleanRawSigRef.current = null;
+      hasClearedFlagRef.current = false;
       sigPadRef.current?.clear();
 
-      if (initialSignature && typeof initialSignature === 'string' && initialSignature.trim().length > 0) {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => {
-          if (!hasClearedRef.current) {
-            initialImageRef.current = img;
-            redrawCanvasContent();
+      if (initialPrintedName) {
+        setIncludePrintedName(true);
+        setPrintedName(initialPrintedName.toUpperCase());
+        if (initialPrintedNameScale !== undefined) setNameFontSizeScale(initialPrintedNameScale);
+        if (initialPrintedNameSpacing !== undefined) setNameSpacing(initialPrintedNameSpacing);
+      } else {
+        setIncludePrintedName(false);
+        setPrintedName('');
+        setNameFontSizeScale(1.0);
+        setNameSpacing(8);
+      }
+
+      const sigToProcess = initialRawSignature || initialSignature;
+      if (sigToProcess && typeof sigToProcess === 'string' && sigToProcess.trim().length > 0) {
+        separateSignatureAndPrintedName(sigToProcess.trim(), initialPrintedName).then(
+          ({ rawSignature, printedName: detectedName, fontSizeScale, nameSpacing: detectedSpacing, detected }) => {
+            if (hasClearedFlagRef.current) return;
+
+            cleanRawSigRef.current = rawSignature;
+
+            if (detected && detectedName && !initialPrintedName) {
+              setIncludePrintedName(true);
+              setPrintedName(detectedName.toUpperCase());
+              if (fontSizeScale) setNameFontSizeScale(fontSizeScale);
+              if (detectedSpacing !== undefined) setNameSpacing(detectedSpacing);
+            }
+
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+              if (!hasClearedFlagRef.current) {
+                initialImageRef.current = img;
+                redrawCanvasContent();
+              }
+            };
+            img.onerror = () => {
+              console.warn('Failed to load initial signature image');
+            };
+            img.src = rawSignature;
           }
-        };
-        img.onerror = () => {
-          console.warn('Failed to load initial signature image');
-        };
-        img.src = initialSignature.trim();
+        );
       }
     } else {
       drawnPointsRef.current = null;
       initialImageRef.current = null;
-      hasClearedRef.current = false;
+      cleanRawSigRef.current = null;
+      hasClearedFlagRef.current = false;
       setDrawnPreview(null);
       setSigBottomY(null);
       setCombinedPreviewUrl(null);
       activePointerIdRef.current = null;
       activePointerTypeRef.current = null;
     }
-  }, [isOpen, initialSignature]);
+  }, [isOpen, initialSignature, initialRawSignature, initialPrintedName, initialPrintedNameScale, initialPrintedNameSpacing]);
 
   const initOrResizePad = (force = false) => {
     const canvas = canvasRef.current;
@@ -281,12 +330,12 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
         penColor,
         minWidth: strokeConfig.min,
         maxWidth: strokeConfig.max,
+        dotSize: strokeConfig.dotSize,
         throttle: 0,
         velocityFilterWeight: 0.7,
       });
 
-      // Capacitive Stylus Pressure & Dynamic Calligraphy Support
-      const origCalcWidth = (pad as any)._strokeWidth.bind(pad);
+      // Dynamic ink width calculation for stylus pressure and smooth speed dynamics
       (pad as any)._strokeWidth = function (velocity: number, options: any) {
         const lastGroup = this._data[this._data.length - 1];
         const lastPoint = lastGroup?.points[lastGroup.points.length - 1];
@@ -304,12 +353,17 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
             setStylusDetected(true);
           }
           const p = Math.pow(lastPoint.pressure, 0.75);
-          const v = 1 / (velocity + 1);
+          const v = 1 / (1 + velocity * 0.2);
           const dynamic = p * 0.75 + v * 0.25;
           return options.minWidth + (options.maxWidth - options.minWidth) * dynamic;
         }
 
-        return origCalcWidth(velocity, options);
+        // Mouse, trackpad, or finger touch:
+        // Use smooth velocity factor so stroke thickness naturally reflects the selected size
+        // instead of collapsing instantly to minWidth
+        const speedFactor = 1 / (1 + velocity * 0.22);
+        const dynamic = Math.max(0.15, Math.min(1.0, speedFactor));
+        return options.minWidth + (options.maxWidth - options.minWidth) * dynamic;
       };
 
       pad.addEventListener('endStroke', () => {
@@ -329,6 +383,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
       sigPadRef.current.penColor = penColor;
       sigPadRef.current.minWidth = strokeConfig.min;
       sigPadRef.current.maxWidth = strokeConfig.max;
+      sigPadRef.current.dotSize = strokeConfig.dotSize;
       sigPadRef.current.on();
     }
 
@@ -358,12 +413,14 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
     if (sigPadRef.current) {
       sigPadRef.current.minWidth = config.min;
       sigPadRef.current.maxWidth = config.max;
+      sigPadRef.current.dotSize = config.dotSize;
       const data = sigPadRef.current.toData();
       if (data && data.length > 0) {
         const updatedData = data.map((group: any) => ({
           ...group,
           minWidth: config.min,
           maxWidth: config.max,
+          dotSize: config.dotSize,
         }));
         drawnPointsRef.current = updatedData;
         redrawCanvasContent(updatedData);
@@ -372,8 +429,9 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
   };
 
   const handleClear = () => {
-    hasClearedRef.current = true;
+    hasClearedFlagRef.current = true;
     initialImageRef.current = null;
+    cleanRawSigRef.current = null;
     drawnPointsRef.current = null;
     sigPadRef.current?.clear();
     setDrawnPreview(null);
@@ -637,7 +695,12 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
     const updateCombined = async () => {
       let baseSig = '';
       if (activeTab === 'draw') {
-        if (canvasRef.current && sigPadRef.current && !sigPadRef.current.isEmpty()) {
+        const hasNewStrokes = Boolean(drawnPointsRef.current && drawnPointsRef.current.length > 0);
+        if (hasNewStrokes && canvasRef.current) {
+          baseSig = trimCanvas(canvasRef.current, 8);
+        } else if (cleanRawSigRef.current) {
+          baseSig = cleanRawSigRef.current;
+        } else if (canvasRef.current && sigPadRef.current && !sigPadRef.current.isEmpty()) {
           baseSig = trimCanvas(canvasRef.current, 8);
         }
       } else if (activeTab === 'type') {
@@ -676,32 +739,64 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
   const handleSaveAndSelect = async () => {
     let dataUrl = ''; let label = 'Signature';
     const effectiveName = printedName.trim().toUpperCase();
+    let rawSig = '';
+
     if (activeTab === 'draw') {
       if (!sigPadRef.current || sigPadRef.current.isEmpty()) {
         useToastStore.getState().showToast('Please draw a signature first', 'warning');
         return;
       }
       const hasNewStrokes = Boolean(drawnPointsRef.current && drawnPointsRef.current.length > 0);
-      if (!hasNewStrokes && initialSignature && !hasClearedRef.current && !(includePrintedName && effectiveName)) {
-        dataUrl = initialSignature;
+      if (!hasNewStrokes && cleanRawSigRef.current) {
+        rawSig = cleanRawSigRef.current;
+      } else if (!hasNewStrokes && initialSignature && !hasClearedFlagRef.current && !(includePrintedName && effectiveName)) {
+        rawSig = initialSignature;
       } else {
-        dataUrl = trimCanvas(canvasRef.current!, 8);
+        rawSig = trimCanvas(canvasRef.current!, 8);
       }
+      dataUrl = rawSig;
       label = sigLabel.trim() || (includePrintedName && effectiveName ? effectiveName : 'Drawn Signature');
     } else if (activeTab === 'type') {
       if (!typedText.trim()) {
         useToastStore.getState().showToast('Please enter your name', 'warning');
         return;
       }
-      dataUrl = generateTypedDataUrl(typedText);
+      rawSig = generateTypedDataUrl(typedText);
+      dataUrl = rawSig;
       label = sigLabel.trim() || (includePrintedName && effectiveName ? effectiveName : `Typed: ${typedText}`);
     }
+
     if (dataUrl) {
+      const metaToSave = {
+        rawSignature: rawSig,
+        printedName: includePrintedName && effectiveName ? effectiveName : undefined,
+        printedNameScale: includePrintedName && effectiveName ? nameFontSizeScale : undefined,
+        printedNameSpacing: includePrintedName && effectiveName ? nameSpacing : undefined,
+      };
+
       if (includePrintedName && effectiveName) {
-        dataUrl = await combineSignatureAndName(dataUrl, effectiveName, penColor, undefined, nameSpacing, nameFontSizeScale);
+        dataUrl = await combineSignatureAndName(rawSig, effectiveName, penColor, undefined, nameSpacing, nameFontSizeScale);
       }
-      saveSignature({ type: activeTab as any, dataUrl, label, isDefault });
-      onSelectSignature(dataUrl, label);
+
+      cacheSignatureMeta(dataUrl, {
+        rawSignature: rawSig,
+        printedName: includePrintedName && effectiveName ? effectiveName : undefined,
+        fontSizeScale: nameFontSizeScale,
+        nameSpacing,
+      });
+
+      saveSignature({
+        type: activeTab as any,
+        dataUrl,
+        rawSignature: rawSig,
+        printedName: includePrintedName && effectiveName ? effectiveName : undefined,
+        printedNameScale: includePrintedName && effectiveName ? nameFontSizeScale : undefined,
+        printedNameSpacing: includePrintedName && effectiveName ? nameSpacing : undefined,
+        label,
+        isDefault,
+      });
+
+      onSelectSignature(dataUrl, label, metaToSave);
       onClose();
     }
   };
@@ -714,13 +809,35 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
       const rawResult = event.target?.result as string;
       if (rawResult) {
         let cleanResult = await processUploadedSignature(rawResult);
+        const rawSig = cleanResult;
         const effectiveName = printedName.trim().toUpperCase();
+        const metaToSave = {
+          rawSignature: rawSig,
+          printedName: includePrintedName && effectiveName ? effectiveName : undefined,
+          printedNameScale: includePrintedName && effectiveName ? nameFontSizeScale : undefined,
+          printedNameSpacing: includePrintedName && effectiveName ? nameSpacing : undefined,
+        };
         if (includePrintedName && effectiveName) {
-          cleanResult = await combineSignatureAndName(cleanResult, effectiveName, penColor, undefined, nameSpacing, nameFontSizeScale);
+          cleanResult = await combineSignatureAndName(rawSig, effectiveName, penColor, undefined, nameSpacing, nameFontSizeScale);
         }
+        cacheSignatureMeta(cleanResult, {
+          rawSignature: rawSig,
+          printedName: includePrintedName && effectiveName ? effectiveName : undefined,
+          fontSizeScale: nameFontSizeScale,
+          nameSpacing,
+        });
         const label = sigLabel.trim() || (includePrintedName && effectiveName ? effectiveName : 'Uploaded Signature');
-        saveSignature({ type: 'upload', dataUrl: cleanResult, label, isDefault });
-        onSelectSignature(cleanResult, label);
+        saveSignature({
+          type: 'upload',
+          dataUrl: cleanResult,
+          rawSignature: rawSig,
+          printedName: includePrintedName && effectiveName ? effectiveName : undefined,
+          printedNameScale: includePrintedName && effectiveName ? nameFontSizeScale : undefined,
+          printedNameSpacing: includePrintedName && effectiveName ? nameSpacing : undefined,
+          label,
+          isDefault,
+        });
+        onSelectSignature(cleanResult, label, metaToSave);
         onClose();
       }
     };
@@ -1178,7 +1295,15 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
             {savedSigs.map((s) => (
               <button
                 key={s.id}
-                onClick={() => { onSelectSignature(s.dataUrl, s.label); onClose(); }}
+                onClick={() => {
+                  onSelectSignature(s.dataUrl, s.label, {
+                    rawSignature: s.rawSignature,
+                    printedName: s.printedName,
+                    printedNameScale: s.printedNameScale,
+                    printedNameSpacing: s.printedNameSpacing,
+                  });
+                  onClose();
+                }}
                 className="card-organic w-full p-3 rounded-[1.5rem] flex items-center justify-between transition-all duration-300"
               >
                 <img src={s.dataUrl} alt={s.label} className="h-10 max-w-[200px] object-contain" />
